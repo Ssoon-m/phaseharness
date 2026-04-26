@@ -88,7 +88,6 @@
 - `spec/` 문서가 존재한다.
 - `core/` 아래 canonical implementation 초안이 존재한다.
 - canonical installer는 `installer/install-harness.md`다.
-- 기존 `prompt/`는 transitional location으로만 본다.
 
 ---
 
