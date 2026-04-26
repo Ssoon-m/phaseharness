@@ -36,7 +36,13 @@ This repository defines a provider-neutral harness standard and ships a canonica
 
 Open an agent session in the target repository and give it `installer/install-harness.md`.
 
-For local testing, provide the source path:
+The installer uses the canonical GitHub source by default:
+
+```text
+https://github.com/Ssoon-m/phaseloop.git
+```
+
+For local development, override the source path:
 
 ```bash
 export HARNESS_SOURCE=/absolute/path/to/phaseloop

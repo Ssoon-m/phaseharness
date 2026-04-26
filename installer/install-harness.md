@@ -4,25 +4,37 @@ Use this document in the target repository session.
 
 You are an agent running at the target repository root. Install the canonical provider-neutral harness from this project. Do not redesign the harness from scratch.
 
-## 0. Required Source
+## 0. Source
 
-You need one of:
+The canonical phaseloop source is:
 
-- `HARNESS_SOURCE`: path to a local checkout of this harness repository
-- `HARNESS_REPO_URL`: git URL for this harness repository
-
-If neither is available, stop and ask the user for the source. Do not invent a harness implementation from this installer document.
-
-Recommended local-source setup:
-
-```bash
-export HARNESS_SOURCE=/absolute/path/to/harness-repo
+```text
+https://github.com/Ssoon-m/phaseloop
 ```
 
-Recommended clone setup:
+By default, install from:
+
+```text
+https://github.com/Ssoon-m/phaseloop.git
+```
+
+Optional overrides:
+
+- `HARNESS_SOURCE`: path to a local checkout of phaseloop, useful for local development
+- `HARNESS_REPO_URL`: alternate git URL, useful for forks
+
+Do not invent a harness implementation from this installer document. Install from the canonical source or an explicit override.
+
+Local development override:
 
 ```bash
-export HARNESS_REPO_URL=<git-url-for-this-harness-repo>
+export HARNESS_SOURCE=/absolute/path/to/phaseloop
+```
+
+Fork override:
+
+```bash
+export HARNESS_REPO_URL=<git-url-for-your-fork>
 ```
 
 ## 1. Preflight
@@ -75,10 +87,11 @@ test -f "$HARNESS_SOURCE/core/.agent-harness/config.toml"
 test -f "$HARNESS_SOURCE/core/scripts/run-server.py"
 ```
 
-If only `HARNESS_REPO_URL` is set, clone to a temp directory:
+If `HARNESS_SOURCE` is not set, clone phaseloop to a temp directory:
 
 ```bash
-HARNESS_SOURCE="$(mktemp -d)/agent-harness"
+HARNESS_REPO_URL="${HARNESS_REPO_URL:-https://github.com/Ssoon-m/phaseloop.git}"
+HARNESS_SOURCE="$(mktemp -d)/phaseloop"
 git clone --depth=1 "$HARNESS_REPO_URL" "$HARNESS_SOURCE"
 ```
 

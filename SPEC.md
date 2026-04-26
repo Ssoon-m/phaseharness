@@ -442,7 +442,7 @@ installer가 하면 안 되는 것:
 현재 구현은 canonical 구조를 갖춘 초안이다. 남은 갭은 아래와 같다.
 
 - 실제 Claude/Codex CLI 버전별 end-to-end 실행 검증이 아직 필요함
-- installer는 `HARNESS_SOURCE` 또는 `HARNESS_REPO_URL`을 요구하며, published repo URL이 아직 고정되지 않음
+- installer는 기본적으로 `https://github.com/Ssoon-m/phaseloop.git`에서 canonical core를 가져오며, 로컬 개발 시 `HARNESS_SOURCE`로 override할 수 있음
 - provider별 capability matrix를 실제 help output 기반으로 더 구체화해야 함
 - role output schema는 `decision_v1`만 정의되어 있고 확장/버전 관리 정책이 더 필요함
 - generated bridge 파일의 overwrite/merge 정책을 테스트 fixture로 검증해야 함
