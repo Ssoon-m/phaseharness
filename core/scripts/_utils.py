@@ -46,11 +46,41 @@ def save_json(path: Path, data: Any) -> None:
 def load_toml(path: Path) -> dict[str, Any]:
     if not path.exists():
         return {}
-    if tomllib is None:
-        raise RuntimeError("Python 3.11+ is required for TOML config parsing")
-    with path.open("rb") as fh:
-        data = tomllib.load(fh)
-    return data if isinstance(data, dict) else {}
+    if tomllib is not None:
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+        return data if isinstance(data, dict) else {}
+    return _load_simple_toml(path)
+
+
+def _parse_toml_value(raw: str) -> Any:
+    value = raw.strip()
+    if value in ("true", "false"):
+        return value == "true"
+    if value.startswith('"') and value.endswith('"'):
+        return value[1:-1].replace('\\"', '"').replace("\\\\", "\\")
+    if value.isdigit():
+        return int(value)
+    return value
+
+
+def _load_simple_toml(path: Path) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    current: dict[str, Any] = data
+    for line in path.read_text().splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        if stripped.startswith("[") and stripped.endswith("]"):
+            current = data
+            for part in stripped[1:-1].split("."):
+                current = current.setdefault(part, {})
+            continue
+        if "=" not in stripped:
+            continue
+        key, raw_value = stripped.split("=", 1)
+        current[key.strip()] = _parse_toml_value(raw_value)
+    return data
 
 
 def load_config(root: Path | None = None) -> dict[str, Any]:
