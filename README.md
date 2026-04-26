@@ -4,7 +4,8 @@ Portable five-phase agent workflow for Claude Code and Codex.
 
 phaseloop installs a provider-neutral harness into a target repository. It turns
 one explicit work request into durable artifacts, task phases, implementation,
-and evaluation without relying on a single conversation's memory.
+and evaluation without relying on a single conversation's memory. The current
+conversation stays small while fresh headless agent sessions do the actual work.
 
 ## Install
 
@@ -30,13 +31,15 @@ and runs smoke verification.
 Ask the installed agent to use the skill:
 
 ```text
-Use the phaseloop skill to implement <small request>.
+Use the phaseloop skill to implement <small request> with max attempts 3.
 ```
 
-Or run the workflow directly:
+The skill is a thin entry point. It confirms or uses `max attempts`, then starts
+the headless workflow runner. If you omit `max attempts`, the agent should ask
+once and use the configured default only after you accept it.
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600
 ```
 
 Use `--provider claude` to force Claude Code, or omit `--provider` to use the
@@ -60,8 +63,24 @@ Each phase writes an artifact under `tasks/<task-dir>/artifacts/`. The next
 phase reads those files from disk, so progress survives context loss and runtime
 switches.
 
-`--max-attempts` controls how many times a phase may retry before recording an
-error in `tasks/<task-dir>/index.json`.
+The default agent-session strategy is balanced:
+
+```text
+analysis session: clarify + context gather + plan
+build session(s): planned implementation phases
+evaluate session: independent verification
+```
+
+This avoids one large conversation containing the whole job, but it also avoids
+starting a fresh agent session for every small logical phase and repeatedly
+loading the same startup context.
+
+`--max-attempts` controls how many times the analysis session, each build phase,
+and the evaluate session may retry before recording an error in
+`tasks/<task-dir>/index.json`. It is a retry budget, not an infinite loop count.
+
+`--session-timeout-sec` controls how long one headless agent session or build
+phase call may run before it is treated as failed and retried.
 
 ## Generated State
 
@@ -78,7 +97,10 @@ tasks/<task-dir>/
     05-evaluate.md
   phase0.md
   phase1.md
+  analysis-output-attempt1.json
   phase0-output.json
+  generate-output.json
+  evaluate-output-attempt1.json
 ```
 
 The canonical harness lives under `.agent-harness/`. Runtime-specific files are

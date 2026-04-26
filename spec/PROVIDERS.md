@@ -4,6 +4,16 @@ Providers isolate runtime-specific invocation details from the harness lifecycle
 
 The orchestrators must not know how Claude Code or Codex is invoked. They only call provider methods and read state files.
 
+The default workflow uses balanced session boundaries:
+
+- one analysis provider session for clarify, context gather, and plan
+- one or more build provider sessions for implementation phase files
+- one evaluate provider session for independent verification
+
+Providers may reload runtime startup context for each provider session. The
+balanced strategy avoids doing that for every small logical phase while still
+keeping build and evaluate context separate from analysis.
+
 ## Provider Interface
 
 Providers must support the following concepts for prompt execution:

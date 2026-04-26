@@ -9,7 +9,10 @@ Minimum state files:
 - `tasks/index.json`
 - `tasks/<task-dir>/index.json`
 - `tasks/<task-dir>/phase<N>.md`
+- `tasks/<task-dir>/analysis-output-attempt<N>.json`
 - `tasks/<task-dir>/phase<N>-output.json`
+- `tasks/<task-dir>/generate-output.json`
+- `tasks/<task-dir>/evaluate-output-attempt<N>.json`
 - `tasks/<task-dir>/artifacts/01-clarify.md`
 - `tasks/<task-dir>/artifacts/02-context.md`
 - `tasks/<task-dir>/artifacts/03-plan.md`
@@ -58,6 +61,30 @@ Allowed task statuses:
     "observable end condition"
   ],
   "max_attempts": 2,
+  "session_strategy": "balanced",
+  "sessions": [
+    {
+      "session": "analysis",
+      "phases": ["clarify", "context", "plan"],
+      "status": "completed",
+      "attempts": 1,
+      "max_attempts": 2
+    },
+    {
+      "session": "build",
+      "phases": ["generate"],
+      "status": "pending",
+      "attempts": 0,
+      "max_attempts": 2
+    },
+    {
+      "session": "evaluate",
+      "phases": ["evaluate"],
+      "status": "pending",
+      "attempts": 0,
+      "max_attempts": 2
+    }
+  ],
   "workflow": [
     {
       "phase": "clarify",
@@ -98,6 +125,8 @@ Allowed workflow and implementation phase statuses:
 - `completed`
 - `error`
 
+Allowed session statuses use the same values.
+
 Allowed evaluation statuses:
 
 - `pending`
@@ -116,7 +145,15 @@ Explicit work requests use a five-phase artifact workflow:
 4. `generate` executes the phase files and appends `artifacts/04-generate.md`.
 5. `evaluate` writes `artifacts/05-evaluate.md` and updates `evaluation`.
 
-Each phase runs in an isolated provider session or native subagent bridge. The next phase must read previous artifacts from disk; conversation memory is not part of the contract.
+The default session strategy is `balanced`:
+
+- `analysis` runs logical phases 1-3 in one headless agent session.
+- `build` runs implementation phases from `phase<N>.md`.
+- `evaluate` runs final verification in a separate headless agent session.
+
+Logical phases remain visible in `workflow`; agent session boundaries are
+tracked in `sessions`. The next agent session must read previous artifacts
+from disk; conversation memory is not part of the contract.
 
 `done_when` defines when the task is finished. Evaluation may pass or warn only when these conditions and phase acceptance criteria are satisfied.
 

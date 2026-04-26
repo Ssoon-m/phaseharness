@@ -9,6 +9,7 @@ The goal is not to generate a different automation system for every target repos
 - stable file contracts that survive runtime changes
 - provider adapters for runtime-specific invocation details
 - a five-phase artifact workflow for explicit work requests
+- balanced headless session boundaries for analysis, build, and evaluate
 
 ## Target User Flow
 
@@ -21,11 +22,16 @@ The goal is not to generate a different automation system for every target repos
 
 The harness treats files and git as the durable memory layer. It does not assume that a Claude or Codex conversation will keep enough context to continue safely.
 
+The default runtime shape keeps the interactive session small. The harness runs
+analysis, build, and evaluate in fresh headless agent sessions, passing only
+durable artifacts between those sessions.
+
 The stable units are:
 
 - state files in `tasks/`
 - phase lifecycle rules
 - phase artifacts for clarify, context gather, plan, generate, and evaluate
+- session lifecycle rules for analysis, build, and evaluate
 - provider-neutral prompt execution
 - skill and role bridges generated from canonical sources
 

@@ -191,8 +191,12 @@ command -v codex || true
 Optional explicit work request:
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2 --session-timeout-sec 600
 ```
+
+The default runtime strategy is balanced: one analysis agent session for
+clarify, context, and plan; build agent session(s) for implementation phases;
+and one evaluate agent session for final verification.
 
 ## 9. README Note
 
@@ -207,7 +211,8 @@ the final report instead of applying it automatically:
 This project uses phaseloop. Harness state is stored in `tasks/` and
 task artifacts, canonical configuration lives under `.agent-harness/`, and
 runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
-Headless workflow runs use `AGENT_HEADLESS=1`.
+Headless workflow runs use `AGENT_HEADLESS=1` with balanced
+analysis/build/evaluate agent sessions.
 ```
 
 ## 10. Final Report

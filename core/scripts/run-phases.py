@@ -9,6 +9,10 @@ from typing import Any
 from _utils import find_project_root, git_head, load_config, load_json, load_provider, now_iso, save_json
 
 
+def log(message: str) -> None:
+    print(f"[phaseloop] {message}", flush=True)
+
+
 def find_next_phase(index: dict[str, Any]) -> dict[str, Any] | None:
     for phase in index.get("phases", []):
         if phase.get("status") == "pending":
@@ -199,6 +203,7 @@ def run_evaluation(
     config: dict[str, Any],
     provider_name: str | None,
     max_attempts_override: int | None = None,
+    timeout_sec_override: int | None = None,
 ) -> int:
     del provider_name
     index_path = task_dir / "index.json"
@@ -214,12 +219,13 @@ def run_evaluation(
     max_attempts = max_attempts_override or int(
         evaluation.get("max_attempts") or configured_attempts(config, "evaluation_max_attempts", 1)
     )
-    timeout = int(execution.get("check_timeout_sec", 600))
+    timeout = timeout_sec_override or int(execution.get("check_timeout_sec", 600))
     sandbox_mode = str(execution.get("sandbox_mode", "workspace-write"))
     approval_policy = str(execution.get("approval_policy", "never"))
     prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
 
     for attempt in range(int(evaluation.get("attempts", 0)) + 1, max_attempts + 1):
+        log(f"session=evaluate attempt={attempt}/{max_attempts} timeout={timeout}s task={task_dir.name}")
         index = load_json(index_path)
         evaluation = index.get("evaluation", {})
         if not isinstance(evaluation, dict):
@@ -250,8 +256,10 @@ def run_evaluation(
         fresh_eval = fresh.get("evaluation", {})
         fresh_status = fresh_eval.get("status") if isinstance(fresh_eval, dict) else None
         if fresh_status in ("pass", "warn"):
+            log(f"session=evaluate completed status={fresh_status}")
             return 0
         if attempt < max_attempts:
+            log(f"session=evaluate retrying status={fresh_status or 'unknown'}")
             continue
 
     index = load_json(index_path)
@@ -267,6 +275,7 @@ def run_evaluation(
     )
     index["evaluation"] = evaluation
     save_json(index_path, index)
+    log("session=evaluate failed")
     return 1
 
 
@@ -275,6 +284,7 @@ def run_phases(
     provider_name: str | None = None,
     max_attempts_override: int | None = None,
     skip_evaluation: bool = False,
+    session_timeout_sec: int | None = None,
 ) -> int:
     root = find_project_root()
     config = load_config(root)
@@ -286,7 +296,8 @@ def run_phases(
         return 1
 
     baseline = git_head(root)
-    timeout = int(config.get("execution", {}).get("phase_timeout_sec", 1800))
+    execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
+    timeout = session_timeout_sec or int(execution.get("session_timeout_sec", execution.get("phase_timeout_sec", 1800)))
     sandbox_mode = str(config.get("execution", {}).get("sandbox_mode", "workspace-write"))
     approval_policy = str(config.get("execution", {}).get("approval_policy", "never"))
     prompt_handoff = str(config.get("execution", {}).get("prompt_handoff", "stdin"))
@@ -295,16 +306,16 @@ def run_phases(
         index = load_json(index_path)
         phase = find_next_phase(index)
         if phase is None:
-            if not skip_evaluation and run_evaluation(root, task_dir, provider, config, provider_name, max_attempts_override) != 0:
+            if not skip_evaluation and run_evaluation(root, task_dir, provider, config, provider_name, max_attempts_override, session_timeout_sec) != 0:
                 update_top_index(root, task_dir_name, "error")
-                print(f"evaluation failed: {task_dir_name}")
+                log(f"evaluation failed: {task_dir_name}")
                 return 1
             index = load_json(index_path)
             index["completed_at"] = now_iso()
             index["status"] = "completed"
             save_json(index_path, index)
             update_top_index(root, task_dir_name, "completed")
-            print(f"all phases completed: {task_dir_name}")
+            log(f"all phases completed: {task_dir_name}")
             return 0
 
         phase_num = int(phase["phase"])
@@ -321,6 +332,7 @@ def run_phases(
         save_json(index_path, index)
 
         ensure_generate_artifact(task_dir)
+        log(f"session=build phase={phase_num} attempt={attempt}/{max_attempts} timeout={timeout}s task={task_dir_name}")
         prompt = build_phase_prompt(root, task_dir, phase, attempt, max_attempts)
         result = provider.run_prompt(
             prompt,
@@ -353,7 +365,7 @@ def run_phases(
             save_json(index_path, fresh_index)
             if phase_num == 0:
                 run_docs_diff(root, task_dir, baseline)
-            print(f"phase {phase_num} completed")
+            log(f"phase {phase_num} completed")
             continue
 
         failure = result["failure_category"] or "runtime_error"
@@ -366,7 +378,7 @@ def run_phases(
                 last_error_message=f"{failure}: retrying phase",
             )
             save_json(index_path, fresh_index)
-            print(f"phase {phase_num} retrying ({attempt}/{max_attempts})")
+            log(f"phase {phase_num} retrying ({attempt}/{max_attempts})")
             continue
 
         if status != "error":
@@ -380,7 +392,7 @@ def run_phases(
             save_json(index_path, fresh_index)
 
         update_top_index(root, task_dir_name, "error")
-        print(f"phase {phase_num} failed")
+        log(f"phase {phase_num} failed")
         return 1
 
 
@@ -389,9 +401,12 @@ def main() -> int:
     parser.add_argument("task_dir", help="Task directory name under tasks/")
     parser.add_argument("--provider", default=None, help="Provider name override")
     parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per phase and evaluation")
+    parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
+    parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--skip-evaluation", action="store_true", help="Do not run the final evaluation step")
     args = parser.parse_args()
-    return run_phases(args.task_dir, args.provider, args.max_attempts, args.skip_evaluation)
+    session_timeout_sec = args.session_timeout_sec or args.phase_timeout_sec
+    return run_phases(args.task_dir, args.provider, args.max_attempts, args.skip_evaluation, session_timeout_sec)
 
 
 if __name__ == "__main__":

@@ -3,8 +3,10 @@ from __future__ import annotations
 
 import argparse
 import re
+import select
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any
 
@@ -17,6 +19,8 @@ ARTIFACT_AGENT_PHASES = [
     ("plan", "phase-plan", "artifacts/03-plan.md"),
     ("evaluate", "phase-evaluate", "artifacts/05-evaluate.md"),
 ]
+
+ANALYSIS_PHASES = ARTIFACT_AGENT_PHASES[:3]
 
 WORKFLOW_STATUS_PHASES = [
     ("clarify", "artifacts/01-clarify.md"),
@@ -89,7 +93,37 @@ def workflow_status_template(max_attempts: int) -> list[dict[str, Any]]:
     ]
 
 
-def create_task(root: Path, request: str, task_name: str, max_attempts: int) -> Path:
+def session_status_template(max_attempts: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "session": "analysis",
+            "phases": ["clarify", "context", "plan"],
+            "status": "pending",
+            "attempts": 0,
+            "max_attempts": max_attempts,
+        },
+        {
+            "session": "build",
+            "phases": ["generate"],
+            "status": "pending",
+            "attempts": 0,
+            "max_attempts": max_attempts,
+        },
+        {
+            "session": "evaluate",
+            "phases": ["evaluate"],
+            "status": "pending",
+            "attempts": 0,
+            "max_attempts": max_attempts,
+        },
+    ]
+
+
+def log(message: str) -> None:
+    print(f"[phaseloop] {message}", flush=True)
+
+
+def create_task(root: Path, request: str, task_name: str, max_attempts: int, session_strategy: str) -> Path:
     ensure_base_state(root)
     task_id = next_task_number(root)
     task_dir_name = f"{task_id}-{slugify(task_name)}"
@@ -105,6 +139,8 @@ def create_task(root: Path, request: str, task_name: str, max_attempts: int) -> 
         "created_at": created_at,
         "done_when": [],
         "max_attempts": max_attempts,
+        "session_strategy": session_strategy,
+        "sessions": session_status_template(max_attempts),
         "workflow": workflow_status_template(max_attempts),
         "artifacts": {
             "clarify": "artifacts/01-clarify.md",
@@ -153,6 +189,19 @@ def set_workflow_status(task_dir: Path, phase_name: str, **fields: Any) -> None:
     save_json(index_path, index)
 
 
+def set_session_status(task_dir: Path, session_name: str, **fields: Any) -> None:
+    index_path = task_dir / "index.json"
+    index = load_json(index_path)
+    max_attempts = int(index.get("max_attempts", 2))
+    if not isinstance(index.get("sessions"), list):
+        index["sessions"] = session_status_template(max_attempts)
+    for session in index.get("sessions", []):
+        if session.get("session") == session_name:
+            session.update(fields)
+            break
+    save_json(index_path, index)
+
+
 def phase_prompt(root: Path, task_dir: Path, role_name: str, request: str, artifact: str, attempt: int, max_attempts: int) -> str:
     task_index = (task_dir / "index.json").read_text()
     extra = ""
@@ -196,6 +245,148 @@ Attempt:
 """
 
 
+def analysis_prompt(root: Path, task_dir: Path, request: str, attempt: int, max_attempts: int) -> str:
+    task_index = (task_dir / "index.json").read_text()
+    task_contract = (root / ".agent-harness" / "prompts" / "task-create.md").read_text()
+    return f"""You are running the phaseloop analysis session.
+
+This single headless session owns the first three logical workflow phases:
+
+1. clarify
+2. context gather
+3. plan
+
+Do not implement code. The goal is to produce durable artifacts and executable
+phase files so a later build session can work from file state instead of this
+conversation's memory.
+
+## Clarify Role
+
+{role_prompt(root, "phase-clarify")}
+
+## Context Gather Role
+
+{role_prompt(root, "phase-context")}
+
+## Plan Role
+
+{role_prompt(root, "phase-plan")}
+
+## Task Creation Contract
+
+{task_contract}
+
+## Headless Mode
+
+- If AGENT_HEADLESS=1, do not ask questions.
+- Record assumptions and deferred scope instead of stopping for clarification.
+- Write all required files before returning.
+- Preserve workflow and session metadata already present in `{task_dir.relative_to(root)}/index.json`.
+
+Attempt:
+- This is analysis attempt {attempt} of {max_attempts}.
+
+## Required Files
+
+- `{task_dir.relative_to(root)}/artifacts/01-clarify.md`
+- `{task_dir.relative_to(root)}/artifacts/02-context.md`
+- `{task_dir.relative_to(root)}/artifacts/03-plan.md`
+- `{task_dir.relative_to(root)}/index.json`
+- `{task_dir.relative_to(root)}/phase<N>.md` files for the build session
+
+## Original User Request
+
+{request}
+
+## Task Index
+
+```json
+{task_index}
+```
+
+## Project Docs
+
+{docs_context(root)}
+"""
+
+
+def missing_analysis_artifacts(task_dir: Path) -> list[str]:
+    missing = []
+    for _, _, artifact in ANALYSIS_PHASES:
+        if not (task_dir / artifact).exists():
+            missing.append(artifact)
+    index = load_json(task_dir / "index.json")
+    if not index.get("phases"):
+        missing.append("phase<N>.md")
+    return missing
+
+
+def run_analysis_session(
+    root: Path,
+    task_dir: Path,
+    provider: Any,
+    request: str,
+    max_attempts: int,
+    timeout_sec: int,
+) -> int:
+    config = load_config(root)
+    execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
+    sandbox_mode = str(execution.get("sandbox_mode", "workspace-write"))
+    approval_policy = str(execution.get("approval_policy", "never"))
+    prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
+
+    for attempt in range(1, max_attempts + 1):
+        log(f"session=analysis attempt={attempt}/{max_attempts} timeout={timeout_sec}s phases=clarify,context,plan")
+        set_session_status(task_dir, "analysis", status="running", attempts=attempt)
+        for phase_name, _, _ in ANALYSIS_PHASES:
+            set_workflow_status(task_dir, phase_name, status="running", attempts=attempt)
+
+        result = provider.run_prompt(
+            analysis_prompt(root, task_dir, request, attempt, max_attempts),
+            cwd=str(root),
+            timeout_sec=timeout_sec,
+            sandbox_mode=sandbox_mode,
+            approval_policy=approval_policy,
+            prompt_handoff=prompt_handoff,
+            capture_json=True,
+        )
+        save_json(
+            task_dir / f"analysis-output-attempt{attempt}.json",
+            {
+                "session": "analysis",
+                "attempt": attempt,
+                "provider": provider.name,
+                **result,
+            },
+        )
+
+        missing = missing_analysis_artifacts(task_dir)
+        if not missing:
+            completed_at = now_iso()
+            set_session_status(task_dir, "analysis", status="completed", completed_at=completed_at)
+            for phase_name, _, _ in ANALYSIS_PHASES:
+                set_workflow_status(task_dir, phase_name, status="completed", completed_at=completed_at)
+            log("session=analysis completed")
+            return 0
+
+        if attempt < max_attempts:
+            log(f"session=analysis missing={','.join(missing)}; retrying")
+            set_session_status(task_dir, "analysis", status="pending", last_failure_at=now_iso())
+            for phase_name, _, _ in ANALYSIS_PHASES:
+                set_workflow_status(task_dir, phase_name, status="pending", last_failure_at=now_iso())
+            continue
+
+        error = f"analysis did not create required files: {', '.join(missing)}"
+        failed_at = now_iso()
+        set_session_status(task_dir, "analysis", status="error", failed_at=failed_at, error_message=error)
+        for phase_name, _, _ in ANALYSIS_PHASES:
+            set_workflow_status(task_dir, phase_name, status="error", failed_at=failed_at, error_message=error)
+        log("session=analysis failed")
+        return 1
+
+    return 1
+
+
 def run_artifact_phase(
     root: Path,
     task_dir: Path,
@@ -205,20 +396,24 @@ def run_artifact_phase(
     role_name: str,
     artifact: str,
     max_attempts: int,
+    timeout_sec: int,
+    session_name: str | None = None,
 ) -> int:
     config = load_config(root)
     execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
-    timeout = int(execution.get("phase_timeout_sec", 1800))
     sandbox_mode = str(execution.get("sandbox_mode", "workspace-write"))
     approval_policy = str(execution.get("approval_policy", "never"))
     prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
 
     for attempt in range(1, max_attempts + 1):
+        log(f"phase={phase_name} attempt={attempt}/{max_attempts} timeout={timeout_sec}s artifact={task_dir / artifact}")
+        if session_name:
+            set_session_status(task_dir, session_name, status="running", attempts=attempt, max_attempts=max_attempts)
         set_workflow_status(task_dir, phase_name, status="running", attempts=attempt)
         result = provider.run_prompt(
             phase_prompt(root, task_dir, role_name, request, artifact, attempt, max_attempts),
             cwd=str(root),
-            timeout_sec=timeout,
+            timeout_sec=timeout_sec,
             sandbox_mode=sandbox_mode,
             approval_policy=approval_policy,
             prompt_handoff=prompt_handoff,
@@ -242,10 +437,16 @@ def run_artifact_phase(
                     continue
                 if status not in ("pass", "warn"):
                     set_workflow_status(task_dir, phase_name, status="error", failed_at=now_iso())
+                    if session_name:
+                        set_session_status(task_dir, session_name, status="error", failed_at=now_iso())
                     return 1
             set_workflow_status(task_dir, phase_name, status="completed", completed_at=now_iso())
+            if session_name:
+                set_session_status(task_dir, session_name, status="completed", completed_at=now_iso())
+            log(f"phase={phase_name} completed")
             return 0
         if attempt < max_attempts:
+            log(f"phase={phase_name} missing artifact; retrying")
             set_workflow_status(task_dir, phase_name, status="pending", last_failure_at=now_iso())
             continue
 
@@ -256,13 +457,23 @@ def run_artifact_phase(
         failed_at=now_iso(),
         error_message=f"{artifact} was not created within max_attempts",
     )
+    if session_name:
+        set_session_status(
+            task_dir,
+            session_name,
+            status="error",
+            failed_at=now_iso(),
+            error_message=f"{artifact} was not created within max_attempts",
+        )
+    log(f"phase={phase_name} failed")
     return 1
 
 
-def run_generate(root: Path, task_dir: Path, provider_name: str | None, max_attempts: int) -> int:
+def run_generate(root: Path, task_dir: Path, provider_name: str | None, max_attempts: int, timeout_sec: int) -> int:
     artifact = task_dir / "artifacts" / "04-generate.md"
     if not artifact.exists():
         artifact.write_text("# Phase 4: Generate\n\n")
+    set_session_status(task_dir, "build", status="running", attempts=1, max_attempts=max_attempts)
     set_workflow_status(task_dir, "generate", status="running", attempts=1, max_attempts=max_attempts)
     cmd = [
         sys.executable,
@@ -271,23 +482,84 @@ def run_generate(root: Path, task_dir: Path, provider_name: str | None, max_atte
         "--max-attempts",
         str(max_attempts),
         "--skip-evaluation",
+        "--session-timeout-sec",
+        str(timeout_sec),
     ]
     if provider_name:
         cmd.extend(["--provider", provider_name])
-    result = subprocess.run(cmd, cwd=str(root), text=True, capture_output=True)
+    log(f"phase=generate command={' '.join(cmd)}")
+    index = load_json(task_dir / "index.json")
+    phase_count = len(index.get("phases", [])) if isinstance(index.get("phases"), list) else 1
+    process_timeout = max(60, timeout_sec * max_attempts * max(1, phase_count) + 60)
+    process = subprocess.Popen(
+        cmd,
+        cwd=str(root),
+        text=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+    )
+    stdout_parts: list[str] = []
+    start = time.monotonic()
+    assert process.stdout is not None
+    while True:
+        if time.monotonic() - start > process_timeout:
+            process.kill()
+            process.wait()
+            output = {
+                "exit_code": 124,
+                "stdout": "".join(stdout_parts),
+                "stderr": f"\nTimed out after {process_timeout}s",
+            }
+            save_json(task_dir / "generate-output.json", output)
+            set_session_status(task_dir, "build", status="error", failed_at=now_iso(), error_message="run-phases timed out")
+            set_workflow_status(task_dir, "generate", status="error", failed_at=now_iso(), error_message="run-phases timed out")
+            log("phase=generate failed timeout")
+            return 124
+
+        ready, _, _ = select.select([process.stdout], [], [], 0.2)
+        if ready:
+            line = process.stdout.readline()
+            if line:
+                stdout_parts.append(line)
+                print(line, end="", flush=True)
+
+        if process.poll() is not None:
+            remainder = process.stdout.read()
+            if remainder:
+                stdout_parts.append(remainder)
+                print(remainder, end="", flush=True)
+            break
+
+    return_code = process.returncode if process.returncode is not None else process.wait()
+    output = {
+        "exit_code": return_code,
+        "stdout": "".join(stdout_parts),
+        "stderr": "",
+    }
+    if return_code == 124:
+        output = {
+            "exit_code": 124,
+            "stdout": "".join(stdout_parts),
+            "stderr": "\nrun-phases exited with timeout status 124",
+        }
+        save_json(task_dir / "generate-output.json", output)
+        set_session_status(task_dir, "build", status="error", failed_at=now_iso(), error_message="run-phases timed out")
+        set_workflow_status(task_dir, "generate", status="error", failed_at=now_iso(), error_message="run-phases timed out")
+        log("phase=generate failed timeout")
+        return 124
     save_json(
         task_dir / "generate-output.json",
-        {
-            "exit_code": result.returncode,
-            "stdout": result.stdout,
-            "stderr": result.stderr,
-        },
+        output,
     )
-    if result.returncode == 0:
+    if return_code == 0:
+        set_session_status(task_dir, "build", status="completed", completed_at=now_iso())
         set_workflow_status(task_dir, "generate", status="completed", completed_at=now_iso())
+        log("phase=generate completed")
         return 0
+    set_session_status(task_dir, "build", status="error", failed_at=now_iso(), error_message="run-phases failed")
     set_workflow_status(task_dir, "generate", status="error", failed_at=now_iso(), error_message="run-phases failed")
-    return result.returncode
+    log("phase=generate failed")
+    return return_code
 
 
 def update_top_status(root: Path, task_dir: Path, status: str) -> None:
@@ -304,25 +576,46 @@ def update_top_status(root: Path, task_dir: Path, status: str) -> None:
     save_json(top_path, top)
 
 
-def run_workflow(request: str, provider_name: str | None, task_name: str | None, max_attempts: int) -> int:
+def run_workflow(
+    request: str,
+    provider_name: str | None,
+    task_name: str | None,
+    max_attempts: int,
+    session_timeout_sec: int,
+) -> int:
     root = find_project_root()
+    config = load_config(root)
+    execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
+    session_strategy = str(execution.get("session_strategy", "balanced"))
+    if session_strategy != "balanced":
+        raise RuntimeError(f"Unsupported session_strategy: {session_strategy}")
     provider = load_provider(provider_name, root)
-    task_dir = create_task(root, request, task_name or request.splitlines()[0][:60], max_attempts)
-    print(f"created task: tasks/{task_dir.name}")
+    task_dir = create_task(root, request, task_name or request.splitlines()[0][:60], max_attempts, session_strategy)
+    log(f"created task=tasks/{task_dir.name} provider={provider.name} max_attempts={max_attempts} strategy={session_strategy}")
 
-    for phase_name, role_name, artifact in ARTIFACT_AGENT_PHASES[:3]:
-        code = run_artifact_phase(root, task_dir, provider, request, phase_name, role_name, artifact, max_attempts)
-        if code != 0:
-            update_top_status(root, task_dir, "error")
-            return code
+    code = run_analysis_session(root, task_dir, provider, request, max_attempts, session_timeout_sec)
+    if code != 0:
+        update_top_status(root, task_dir, "error")
+        return code
 
-    code = run_generate(root, task_dir, provider_name, max_attempts)
+    code = run_generate(root, task_dir, provider_name, max_attempts, session_timeout_sec)
     if code != 0:
         update_top_status(root, task_dir, "error")
         return code
 
     phase_name, role_name, artifact = ARTIFACT_AGENT_PHASES[3]
-    code = run_artifact_phase(root, task_dir, provider, request, phase_name, role_name, artifact, max_attempts)
+    code = run_artifact_phase(
+        root,
+        task_dir,
+        provider,
+        request,
+        phase_name,
+        role_name,
+        artifact,
+        max_attempts,
+        session_timeout_sec,
+        session_name="evaluate",
+    )
     if code != 0:
         update_top_status(root, task_dir, "error")
         return code
@@ -332,23 +625,32 @@ def run_workflow(request: str, provider_name: str | None, task_name: str | None,
     index["completed_at"] = now_iso()
     save_json(task_dir / "index.json", index)
     update_top_status(root, task_dir, "completed")
-    print(f"workflow completed: tasks/{task_dir.name}")
+    log(f"workflow completed: tasks/{task_dir.name}")
     return 0
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run a five-phase artifact workflow for an explicit request.")
+    parser = argparse.ArgumentParser(
+        description="Run a five-phase artifact workflow using balanced analysis/build/evaluate sessions."
+    )
     parser.add_argument("request", nargs="*", help="Work request to execute")
     parser.add_argument("--request-file", default=None, help="Read the work request from a file")
     parser.add_argument("--provider", default=None, help="Provider name override")
     parser.add_argument("--task-name", default=None, help="Task name override")
-    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per workflow phase")
+    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts for analysis, build phases, and evaluate")
+    parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
+    parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
     args = parser.parse_args()
 
     root = find_project_root()
     config = load_config(root)
     execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
     max_attempts = args.max_attempts or int(execution.get("workflow_max_attempts", 2))
+    session_timeout_sec = (
+        args.session_timeout_sec
+        or args.phase_timeout_sec
+        or int(execution.get("session_timeout_sec", execution.get("phase_timeout_sec", 1800)))
+    )
 
     if args.request_file:
         request = Path(args.request_file).read_text()
@@ -356,7 +658,7 @@ def main() -> int:
         request = " ".join(args.request).strip()
     if not request:
         parser.error("request text or --request-file is required")
-    return run_workflow(request, args.provider, args.task_name, max(1, max_attempts))
+    return run_workflow(request, args.provider, args.task_name, max(1, max_attempts), max(1, session_timeout_sec))
 
 
 if __name__ == "__main__":

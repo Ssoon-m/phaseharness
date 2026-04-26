@@ -51,6 +51,11 @@ Canonical workflow roles:
 Automation may call these roles as isolated provider sessions. Runtime bridges
 also expose them as native subagents for interactive Claude/Codex use.
 
+In the default balanced workflow, the orchestrator combines
+`phase-clarify`, `phase-context`, and `phase-plan` into one analysis provider
+session. The roles remain separate canonical prompt assets so the contract stays
+readable and bridgeable even when a session executes more than one logical role.
+
 ## Role Metadata
 
 `role.toml` includes:

@@ -6,6 +6,8 @@ phaseloop는 Claude Code와 Codex에서 함께 사용할 수 있는 설치형 ag
 
 목표는 특정 런타임의 대화 기억에 기대지 않고, 명시적인 작업 요청을 파일 기반 artifact pipeline으로 실행하는 것이다.
 
+기본 실행 모델은 balanced headless sessions다. 현재 대화 세션은 orchestrator 역할만 하고, 실제 작업은 `analysis`, `build`, `evaluate` headless agent session으로 분리한다.
+
 핵심 사용 시나리오:
 
 1. 사용자가 타겟 레포에서 Claude Code 또는 Codex 세션을 연다.
@@ -36,7 +38,10 @@ canonical source는 `.agent-harness/` 아래에 있다.
 - `tasks/<task-dir>/artifacts/04-generate.md`
 - `tasks/<task-dir>/artifacts/05-evaluate.md`
 - `tasks/<task-dir>/phase<N>.md`
+- `tasks/<task-dir>/analysis-output-attempt<N>.json`
 - `tasks/<task-dir>/phase<N>-output.json`
+- `tasks/<task-dir>/generate-output.json`
+- `tasks/<task-dir>/evaluate-output-attempt<N>.json`
 
 대화 context는 계약이 아니다. 다음 단계는 이전 단계의 artifact 파일을 읽고 진행해야 한다.
 
@@ -139,10 +144,10 @@ canonical source는 `.agent-harness/` 아래에 있다.
 phaseloop의 실행 단위는 명시적인 작업 요청이다.
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600
 ```
 
-또는 agent session에서:
+또는 에이전트 세션에서:
 
 ```text
 Use the phaseloop skill to implement <small request>.
@@ -156,11 +161,19 @@ Use the phaseloop skill to implement <small request>.
 4. `generate`: phase 파일을 순서대로 실행하고 구현한다.
 5. `evaluate`: done condition과 acceptance criteria를 검증한다.
 
-각 단계는 별도 provider session 또는 native subagent bridge로 실행될 수 있다. 그러나 표준 결과는 항상 artifact 파일이다.
+기본 에이전트 세션 경계는 logical phase와 1:1이 아니다.
+
+- `analysis` session: `clarify`, `context gather`, `plan`을 한 headless agent session에서 수행한다.
+- `build` session(s): `phase<N>.md` 구현 phase를 수행한다.
+- `evaluate` session: 구현 세션과 분리된 headless agent session에서 검증한다.
+
+이 전략은 앞 단계의 탐색 대화가 구현/검증 context에 계속 쌓이는 것을 막으면서도, 작은 logical phase마다 AGENTS.md 같은 runtime startup context를 반복 로드하는 비용을 줄인다.
+
+표준 결과는 항상 artifact 파일이다. native subagent bridge는 interactive convenience일 수 있지만 lifecycle correctness의 기준은 아니다.
 
 ## 7. Retry Contract
 
-`--max-attempts`는 workflow phase, implementation phase, evaluation 재시도 횟수의 기본값이다.
+`--max-attempts`는 analysis session, implementation phase, evaluate session 재시도 횟수의 기본값이다. Logical workflow phase 상태는 이 session 실행 결과를 반영한다.
 
 실패 시:
 

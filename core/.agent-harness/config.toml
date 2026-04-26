@@ -11,7 +11,8 @@ skills = ".agent-harness/skills"
 roles = ".agent-harness/roles"
 
 [execution]
-phase_timeout_sec = 1800
+session_strategy = "balanced"
+session_timeout_sec = 1800
 check_timeout_sec = 600
 sandbox_mode = "workspace-write"
 approval_policy = "never"
