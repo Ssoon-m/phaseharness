@@ -1,6 +1,6 @@
-# agent-harness
+# phaseloop
 
-Portable agent harness for Claude Code and Codex.
+Portable phased agent loop for Claude Code and Codex.
 
 This repository defines a provider-neutral harness standard and ships a canonical installable core. The harness is designed around durable files and git state rather than one runtime's conversation memory.
 
@@ -39,7 +39,7 @@ Open an agent session in the target repository and give it `installer/install-ha
 For local testing, provide the source path:
 
 ```bash
-export HARNESS_SOURCE=/absolute/path/to/agent-harness
+export HARNESS_SOURCE=/absolute/path/to/phaseloop
 ```
 
 The installer copies the canonical core, generates runtime bridges, creates project context docs, and runs smoke verification.
