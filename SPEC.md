@@ -85,8 +85,9 @@
 
 현재 상태:
 
-- 지금은 `prompt/install-harness.md` 초안만 존재한다.
-- 이후 canonical 경로는 `installer/install-harness.md`로 정리하는 것이 바람직하다.
+- `spec/` 문서가 존재한다.
+- `core/` 아래 canonical implementation 초안이 존재한다.
+- canonical installer는 `installer/install-harness.md`다.
 - 기존 `prompt/`는 transitional location으로만 본다.
 
 ---
@@ -439,22 +440,21 @@ installer가 하면 안 되는 것:
 
 ## 15. Current Known Gap
 
-현재 초안 `prompt/install-harness.md`는 방향은 맞지만 아래 한계가 있다.
+현재 구현은 canonical 구조를 갖춘 초안이다. 남은 갭은 아래와 같다.
 
-- canonical core보다 설치 절차를 먼저 크게 잡고 있음
-- 타겟 레포에서 즉석 생성 비중이 큼
-- runtime capability matrix가 아직 문서화되지 않음
-- skill/role bridge와 native subagent 차이가 아직 문서화되지 않음
-- spec/contract/provider 문서가 아직 없음
+- 실제 Claude/Codex CLI 버전별 end-to-end 실행 검증이 아직 필요함
+- installer는 `HARNESS_SOURCE` 또는 `HARNESS_REPO_URL`을 요구하며, published repo URL이 아직 고정되지 않음
+- provider별 capability matrix를 실제 help output 기반으로 더 구체화해야 함
+- role output schema는 `decision_v1`만 정의되어 있고 확장/버전 관리 정책이 더 필요함
+- generated bridge 파일의 overwrite/merge 정책을 테스트 fixture로 검증해야 함
 
-따라서 다음 작업 우선순위는 아래로 고정한다.
+따라서 다음 작업 우선순위는 아래로 둔다.
 
-1. `PURPOSE.md`
-2. `CONTRACT.md`
-3. `PROVIDERS.md`
-4. `BRIDGES.md`
-5. canonical `core/` 구조 생성
-6. installer 문서 재작성
+1. local install fixture로 core 복사와 bridge 생성 검증
+2. provider별 CLI help 기반 capability matrix 보강
+3. role output schema versioning 보강
+4. installer merge safety 개선
+5. 실제 Claude/Codex headless smoke run
 
 ---
 
