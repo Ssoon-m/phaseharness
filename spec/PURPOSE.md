@@ -8,6 +8,7 @@ The goal is not to generate a different automation system for every target repos
 - installer documents that copy or merge that core into a target repository
 - stable file contracts that survive runtime changes
 - provider adapters for runtime-specific invocation details
+- a five-phase artifact workflow for explicit work requests
 
 ## Target User Flow
 
@@ -22,8 +23,9 @@ The harness treats files and git as the durable memory layer. It does not assume
 
 The stable units are:
 
-- state files in `tasks/` and `iterations/`
+- state files in `tasks/`
 - phase lifecycle rules
+- phase artifacts for clarify, context gather, plan, generate, and evaluate
 - provider-neutral prompt execution
 - skill and role bridges generated from canonical sources
 
@@ -32,7 +34,7 @@ The stable units are:
 - Making `.claude/` or `.codex/` the standard source of truth
 - Treating native subagent formats as portable
 - Requiring identical prompt wording across Claude Code and Codex
-- Running forever by default
+- Retrying forever
 - Continuing when required context is missing
 - Depending on interactive approval prompts in headless mode
 
@@ -60,7 +62,7 @@ The stable units are:
       gen-bridges.py
       gen-docs-diff.py
       run-phases.py
-      run-server.py
+      run-workflow.py
     templates/
       docs/
 ```

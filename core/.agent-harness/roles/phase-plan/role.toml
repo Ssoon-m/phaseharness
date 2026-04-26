@@ -1,0 +1,4 @@
+name = "phase-plan"
+description = "Creates a phased task plan and concrete phase files from clarify and context artifacts."
+tools_policy = "read-write"
+sandbox_mode = "workspace-write"

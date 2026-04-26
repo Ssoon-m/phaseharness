@@ -40,40 +40,29 @@ Generated runtime bridges:
 
 The role source contains runtime-neutral metadata and instructions. The generated bridge adapts that source to each runtime's file format.
 
+Canonical workflow roles:
+
+- `phase-clarify`
+- `phase-context`
+- `phase-plan`
+- `phase-generate`
+- `phase-evaluate`
+
+Automation may call these roles as isolated provider sessions. Runtime bridges
+also expose them as native subagents for interactive Claude/Codex use.
+
 ## Role Metadata
 
 `role.toml` includes:
 
 ```toml
-name = "tech-critic-lead"
-description = "Critical reviewer that approves, rejects, or requests revision for implementation plans."
-model_tier = "strong"
+name = "phase-clarify"
+description = "Clarifies a requested task into a concrete goal, non-goals, assumptions, and done conditions."
 sandbox_mode = "read-only"
 tools_policy = "read-only"
-output_schema = "decision_v1"
 ```
 
-The exact runtime model name is chosen by the provider bridge. `model_tier` is intentionally abstract.
-
-## Role Output
-
-Role output is stored as JSON:
-
-```json
-{
-  "role": "tech-critic-lead",
-  "decision": "approve",
-  "reasons": [],
-  "required_changes": [],
-  "human_intervention_required": false
-}
-```
-
-Allowed decisions:
-
-- `approve`
-- `revise`
-- `reject`
+The exact runtime model name is chosen by the provider bridge when a runtime supports role-specific model selection.
 
 ## Bridge Generation Rules
 
@@ -93,8 +82,8 @@ Claude agent files are Markdown with YAML frontmatter:
 
 ```markdown
 ---
-name: tech-critic-lead
-description: Critical reviewer...
+name: phase-clarify
+description: Clarifies a requested task...
 tools: Read, Grep, Glob, Bash
 model: inherit
 ---
@@ -107,8 +96,8 @@ model: inherit
 Codex custom agents are TOML files:
 
 ```toml
-name = "tech_critic_lead"
-description = "Critical reviewer..."
+name = "phase_clarify"
+description = "Clarifies a requested task..."
 sandbox_mode = "read-only"
 developer_instructions = """
 ...

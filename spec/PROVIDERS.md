@@ -17,7 +17,7 @@ Providers must support the following concepts for prompt execution:
 - `prompt_handoff`
 - `capture_json`
 
-Providers must also support role execution:
+Providers may support role execution:
 
 - `role_name`
 - `role_prompt`
@@ -28,7 +28,7 @@ Providers must also support role execution:
 The practical interface is:
 
 - `run_prompt()`: run one provider-neutral prompt session
-- `run_role()`: run one canonical role in an independent session and write structured output
+- `run_role()`: optional helper for running one canonical role in an independent session and writing structured output
 
 ## Provider Result
 
@@ -87,13 +87,13 @@ Codex bridge files:
 - `.agents/skills` from `.agent-harness/skills`
 - `.codex/agents/*.toml` generated from `.agent-harness/roles/*`
 
-Codex subagents are explicit. The harness must not assume Codex will automatically spawn a custom agent from a description. In headless mode, role work is invoked explicitly by the provider.
+Codex subagents are explicit. The harness must not assume Codex will automatically spawn a custom agent from a description. In headless mode, phase roles are invoked explicitly by the orchestrator through the provider.
 
 ## Sandbox and Approval
 
-Default build and phase execution requires `workspace-write`.
+Default workflow and phase execution requires `workspace-write`.
 
-`read-only` is valid for exploration or review-only roles, but not for build, phase execution, or rollback.
+`read-only` is valid for context gathering or read-only roles, but not for generation or validation fixes.
 
 `on-request` is not a headless standard because it depends on approval UI. Headless runs use `never` or a runtime equivalent. If a required action is blocked, the provider records `sandbox_blocked`.
 

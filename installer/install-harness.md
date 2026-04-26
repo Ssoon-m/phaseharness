@@ -70,7 +70,7 @@ Harness-owned target paths:
 - `scripts/gen-bridges.py`
 - `scripts/gen-docs-diff.py`
 - `scripts/run-phases.py`
-- `scripts/run-server.py`
+- `scripts/run-workflow.py`
 - `docs/mission.md`
 - `docs/spec.md`
 - `docs/testing.md`
@@ -84,7 +84,7 @@ If `HARNESS_SOURCE` is set, verify:
 ```bash
 test -d "$HARNESS_SOURCE/core"
 test -f "$HARNESS_SOURCE/core/.agent-harness/config.toml"
-test -f "$HARNESS_SOURCE/core/scripts/run-server.py"
+test -f "$HARNESS_SOURCE/core/scripts/run-workflow.py"
 ```
 
 If `HARNESS_SOURCE` is not set, clone phaseloop to a temp directory:
@@ -102,7 +102,7 @@ If the checks fail, stop. Do not proceed from a partial source.
 Create target directories:
 
 ```bash
-mkdir -p .agent-harness scripts docs tasks iterations
+mkdir -p .agent-harness scripts docs tasks
 ```
 
 Copy or merge the canonical implementation:
@@ -113,7 +113,7 @@ cp "$HARNESS_SOURCE/core/scripts/_utils.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/gen-bridges.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/gen-docs-diff.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/run-phases.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/run-server.py" scripts/
+cp "$HARNESS_SOURCE/core/scripts/run-workflow.py" scripts/
 ```
 
 If any destination already exists and differs, do not blindly overwrite. Read the diff and preserve local project-specific changes unless they are clearly stale generated bridge files.
@@ -141,8 +141,6 @@ Create `tasks/index.json` if missing:
 }
 ```
 
-Keep `iterations/` as an empty directory unless the project already has iteration history.
-
 ## 6. Configure Providers
 
 Edit `.agent-harness/config.toml` if needed.
@@ -156,7 +154,7 @@ Provider selection rules:
 Headless policy:
 
 - use `AGENT_HEADLESS=1`
-- use workspace-write for build and phase execution
+- use workspace-write for workflow generation and phase execution
 - do not use interactive approval as the headless standard
 
 ## 7. Generate Bridges
@@ -171,8 +169,8 @@ Expected generated paths:
 
 - `.claude/skills` symlink or copy
 - `.agents/skills` symlink or copy
-- `.claude/agents/tech-critic-lead.md`
-- `.codex/agents/tech-critic-lead.toml`
+- `.claude/agents/phase-{clarify,context,plan,generate,evaluate}.md`
+- `.codex/agents/phase-{clarify,context,plan,generate,evaluate}.toml`
 
 These are runtime-specific bridges. The canonical source remains `.agent-harness/skills` and `.agent-harness/roles`.
 
@@ -181,7 +179,7 @@ These are runtime-specific bridges. The canonical source remains `.agent-harness
 Run:
 
 ```bash
-python3 scripts/run-server.py --help
+python3 scripts/run-workflow.py --help
 python3 scripts/run-phases.py --help
 python3 scripts/gen-docs-diff.py --help
 python3 scripts/gen-bridges.py --help
@@ -190,12 +188,10 @@ command -v claude || true
 command -v codex || true
 ```
 
-Do not run the infinite loop by default.
-
-Optional dry run after docs are meaningful:
+Optional explicit work request:
 
 ```bash
-python3 scripts/run-server.py --once
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2
 ```
 
 ## 9. README Note
@@ -209,9 +205,9 @@ the final report instead of applying it automatically:
 ## Agent Harness
 
 This project uses phaseloop. Harness state is stored in `tasks/` and
-`iterations/`, canonical configuration lives under `.agent-harness/`, and
+task artifacts, canonical configuration lives under `.agent-harness/`, and
 runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
-Headless runs use `AGENT_HEADLESS=1`.
+Headless workflow runs use `AGENT_HEADLESS=1`.
 ```
 
 ## 10. Final Report
@@ -233,5 +229,5 @@ chore(harness): install provider-neutral agent harness
 - install canonical .agent-harness core
 - add provider adapters and runner scripts
 - generate Claude/Codex bridges
-- add harness docs and state directories
+- add harness docs and task state
 ```

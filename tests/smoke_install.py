@@ -24,7 +24,6 @@ def copy_core(target: Path) -> None:
     (target / "scripts").mkdir()
     (target / "docs").mkdir()
     (target / "tasks").mkdir()
-    (target / "iterations").mkdir()
 
     shutil.copytree(
         ROOT / "core" / ".agent-harness",
@@ -61,14 +60,22 @@ def main() -> int:
         expected = [
             ".claude/skills",
             ".agents/skills",
-            ".claude/agents/tech-critic-lead.md",
-            ".codex/agents/tech-critic-lead.toml",
+            ".claude/agents/phase-clarify.md",
+            ".codex/agents/phase-clarify.toml",
+            ".claude/agents/phase-context.md",
+            ".codex/agents/phase-context.toml",
+            ".claude/agents/phase-plan.md",
+            ".codex/agents/phase-plan.toml",
+            ".claude/agents/phase-generate.md",
+            ".codex/agents/phase-generate.toml",
+            ".claude/agents/phase-evaluate.md",
+            ".codex/agents/phase-evaluate.toml",
         ]
         for rel in expected:
             if not (target / rel).exists():
                 raise SystemExit(f"missing generated bridge: {rel}")
 
-        run(["python3", "scripts/run-server.py", "--help"], target)
+        run(["python3", "scripts/run-workflow.py", "--help"], target)
         run(["python3", "scripts/run-phases.py", "--help"], target)
         run(["python3", "scripts/gen-docs-diff.py", "--help"], target)
         run(
@@ -80,7 +87,7 @@ def main() -> int:
                 "scripts/gen-bridges.py",
                 "scripts/gen-docs-diff.py",
                 "scripts/run-phases.py",
-                "scripts/run-server.py",
+                "scripts/run-workflow.py",
                 ".agent-harness/providers/base.py",
                 ".agent-harness/providers/claude.py",
                 ".agent-harness/providers/codex.py",

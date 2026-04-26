@@ -1,6 +1,6 @@
 # Contract
 
-The harness contract is the runtime-neutral layer that Claude Code and Codex must both honor.
+The phaseloop contract is the runtime-neutral layer that Claude Code and Codex must both honor.
 
 ## State Files
 
@@ -10,17 +10,18 @@ Minimum state files:
 - `tasks/<task-dir>/index.json`
 - `tasks/<task-dir>/phase<N>.md`
 - `tasks/<task-dir>/phase<N>-output.json`
+- `tasks/<task-dir>/artifacts/01-clarify.md`
+- `tasks/<task-dir>/artifacts/02-context.md`
+- `tasks/<task-dir>/artifacts/03-plan.md`
+- `tasks/<task-dir>/artifacts/04-generate.md`
+- `tasks/<task-dir>/artifacts/05-evaluate.md`
 - `tasks/<task-dir>/docs-diff.md`
-- `tasks/<task-dir>/role-<role-name>-output.json`
-- `iterations/<iter-id>/requirement.md`
-- `iterations/<iter-id>/check-report.json`
-- `iterations/<iter-id>/role-<role-name>-output.json`
 
 Every generated JSON state file should include `schema_version` once the first stable release is cut. Until then, scripts must tolerate missing `schema_version`.
 
-## Task Index
+## Top-Level Task Index
 
-`tasks/index.json` stores the list of tasks:
+`tasks/index.json` stores the list of workflow tasks:
 
 ```json
 {
@@ -42,96 +43,96 @@ Allowed task statuses:
 - `completed`
 - `error`
 
-## Task Phase Index
+## Task Index
 
-`tasks/<task-dir>/index.json` stores the phase lifecycle:
+`tasks/<task-dir>/index.json` stores workflow, phase, and evaluation state:
 
 ```json
 {
   "project": "target-project",
   "task": "example",
   "prompt": "original requirement text",
-  "totalPhases": 2,
+  "status": "pending",
   "created_at": "2026-04-26T12:00:00+0900",
+  "done_when": [
+    "observable end condition"
+  ],
+  "max_attempts": 2,
+  "workflow": [
+    {
+      "phase": "clarify",
+      "artifact": "artifacts/01-clarify.md",
+      "status": "completed",
+      "attempts": 1,
+      "max_attempts": 2
+    }
+  ],
+  "artifacts": {
+    "clarify": "artifacts/01-clarify.md",
+    "context": "artifacts/02-context.md",
+    "plan": "artifacts/03-plan.md",
+    "generate": "artifacts/04-generate.md",
+    "evaluate": "artifacts/05-evaluate.md"
+  },
   "phases": [
     {
       "phase": 0,
-      "name": "docs",
-      "status": "pending"
-    },
-    {
-      "phase": 1,
       "name": "implementation",
-      "status": "pending"
+      "status": "pending",
+      "attempts": 0,
+      "max_attempts": 2
     }
-  ]
-}
-```
-
-Allowed phase statuses:
-
-- `pending`
-- `completed`
-- `error`
-
-## Phase Lifecycle
-
-The common lifecycle is:
-
-1. Discover one requirement.
-2. Build a document-backed implementation plan.
-3. Create a task with phases.
-4. Execute phases one by one.
-5. Check the result.
-6. Roll back if needed.
-
-Phase rules:
-
-- Phase 0 updates documentation.
-- Each phase must be executable in an independent session.
-- Acceptance criteria must be runnable commands.
-- The phase runner must include phase file contents in the prompt, not only file paths.
-- Phase result output is stored in `phase<N>-output.json`.
-- Phase status is read from `tasks/<task-dir>/index.json` after execution.
-- Phase 0 completion triggers `docs-diff.md` generation.
-
-## Check Report
-
-`iterations/<iter-id>/check-report.json` stores the post-build judgment:
-
-```json
-{
-  "iter_id": "1-20260426_120000",
-  "status": "pass",
-  "task": {
-    "dir": "tasks/1-example",
-    "name": "example",
-    "overall_status": "completed"
-  },
-  "phases": [],
-  "issues": [],
-  "conclusion": "",
-  "carry_over": [],
-  "progress": {
-    "previous_iter_id": null,
-    "signal": "no_prior_run",
-    "summary": ""
+  ],
+  "evaluation": {
+    "status": "pending",
+    "attempts": 0,
+    "max_attempts": 2
   }
 }
 ```
 
-Allowed check statuses:
+Allowed workflow and implementation phase statuses:
 
+- `pending`
+- `running`
+- `completed`
+- `error`
+
+Allowed evaluation statuses:
+
+- `pending`
+- `running`
 - `pass`
 - `warn`
 - `fail`
 
-Allowed progress signals:
+## Artifact Workflow
 
-- `improved`
-- `regressed`
-- `inconclusive`
-- `no_prior_run`
+Explicit work requests use a five-phase artifact workflow:
+
+1. `clarify` writes `artifacts/01-clarify.md`.
+2. `context` writes `artifacts/02-context.md`.
+3. `plan` writes `artifacts/03-plan.md`, `index.json`, and `phase<N>.md` files.
+4. `generate` executes the phase files and appends `artifacts/04-generate.md`.
+5. `evaluate` writes `artifacts/05-evaluate.md` and updates `evaluation`.
+
+Each phase runs in an isolated provider session or native subagent bridge. The next phase must read previous artifacts from disk; conversation memory is not part of the contract.
+
+`done_when` defines when the task is finished. Evaluation may pass or warn only when these conditions and phase acceptance criteria are satisfied.
+
+## Implementation Phases
+
+The plan phase may split generate work into `phase<N>.md` files.
+
+Rules:
+
+- Each phase must be executable in an independent session.
+- Acceptance criteria must be concrete and runnable when possible.
+- Phase execution may retry up to `max_attempts`.
+- The phase runner must include prior artifacts, task index, docs, and phase file content in the prompt.
+- Phase result output is stored in `phase<N>-output.json`.
+- Phase status is read from `tasks/<task-dir>/index.json` after execution.
+- Phase 0 completion triggers `docs-diff.md` generation when docs changed.
 
 ## Failure Categories
 
@@ -142,7 +143,7 @@ Headless failures must be categorized:
 - `context_insufficient`
 - `runtime_error`
 
-`context_insufficient` means the harness could not make a responsible decision without user input or missing repository context. It is not a generic runtime error.
+`context_insufficient` means the harness could not make a responsible decision without missing repository context. It is not a generic runtime error.
 
 `sandbox_blocked` means the runtime policy prevented a required action. In headless mode the provider must record this and return, not ask for approval.
 
@@ -158,7 +159,7 @@ Meaning:
 
 - Do not ask questions.
 - Do not wait for confirmation.
-- Choose reasonable defaults only when the decision is supported by local context.
+- Choose reasonable defaults only when local context supports the decision.
 - If context is insufficient, record `context_insufficient` and stop.
 - Do not depend on approval UI.
 

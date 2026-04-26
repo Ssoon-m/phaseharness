@@ -1,0 +1,4 @@
+name = "phase-evaluate"
+description = "Evaluates completed task phases against done conditions and acceptance criteria."
+tools_policy = "read-write"
+sandbox_mode = "workspace-write"

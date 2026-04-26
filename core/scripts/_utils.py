@@ -131,7 +131,6 @@ def read_text_if_exists(path: Path) -> str:
 def ensure_base_state(root: Path | None = None) -> None:
     root = root or find_project_root()
     (root / "tasks").mkdir(exist_ok=True)
-    (root / "iterations").mkdir(exist_ok=True)
     index_path = root / "tasks" / "index.json"
     if not index_path.exists():
         save_json(index_path, {"tasks": []})

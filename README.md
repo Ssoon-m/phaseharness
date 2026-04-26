@@ -1,16 +1,111 @@
 # phaseloop
 
-Portable phased agent loop for Claude Code and Codex.
+Portable five-phase agent workflow for Claude Code and Codex.
 
-This repository defines a provider-neutral harness standard and ships a canonical installable core. The harness is designed around durable files and git state rather than one runtime's conversation memory.
+phaseloop installs a provider-neutral harness into a target repository. It turns
+one explicit work request into durable artifacts, task phases, implementation,
+and evaluation without relying on a single conversation's memory.
 
-## What It Provides
+## Install
 
-- Canonical harness core under `core/`
-- Installer instructions under `installer/`
-- Runtime-neutral contracts under `spec/`
-- Claude Code and Codex provider adapters
-- Generated bridges for runtime-specific skills and agents
+Open Claude Code or Codex in the repository where you want phaseloop installed,
+then give the agent this URL:
+
+```text
+https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
+```
+
+Tell it:
+
+```text
+Install phaseloop from this installer document.
+```
+
+The installer clones `https://github.com/Ssoon-m/phaseloop.git`, copies the
+canonical core, generates Claude/Codex bridges, creates starter project docs,
+and runs smoke verification.
+
+## Start A Task
+
+Ask the installed agent to use the skill:
+
+```text
+Use the phaseloop skill to implement <small request>.
+```
+
+Or run the workflow directly:
+
+```bash
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2
+```
+
+Use `--provider claude` to force Claude Code, or omit `--provider` to use the
+configured default provider.
+
+## How It Works
+
+phaseloop runs one request through five phases:
+
+```text
+clarify -> context gather -> plan -> generate -> evaluate
+```
+
+- `clarify`: understand the request, done conditions, assumptions, and non-goals
+- `context gather`: find the relevant docs, code, patterns, and constraints
+- `plan`: create task state and implementation phase files
+- `generate`: execute the planned phases
+- `evaluate`: verify the result against done conditions and acceptance criteria
+
+Each phase writes an artifact under `tasks/<task-dir>/artifacts/`. The next
+phase reads those files from disk, so progress survives context loss and runtime
+switches.
+
+`--max-attempts` controls how many times a phase may retry before recording an
+error in `tasks/<task-dir>/index.json`.
+
+## Generated State
+
+An executed task produces files like:
+
+```text
+tasks/<task-dir>/
+  index.json
+  artifacts/
+    01-clarify.md
+    02-context.md
+    03-plan.md
+    04-generate.md
+    05-evaluate.md
+  phase0.md
+  phase1.md
+  phase0-output.json
+```
+
+The canonical harness lives under `.agent-harness/`. Runtime-specific files are
+generated bridges:
+
+```text
+.agent-harness/
+  skills/phaseloop/
+  roles/phase-*/
+
+.claude/skills
+.claude/agents/phase-*.md
+.agents/skills
+.codex/agents/phase-*.toml
+```
+
+Edit canonical files under `.agent-harness/`, not generated bridge files.
+
+## Monorepos
+
+Install phaseloop from the directory that should own the workflow state.
+
+- Repo-wide workflow: install from the monorepo root.
+- App-specific workflow: install from `apps/<app>` or the target package.
+
+Root and app-level installs can coexist, but they are separate scopes with
+separate `tasks/` state.
 
 ## Repository Layout
 
@@ -32,37 +127,20 @@ This repository defines a provider-neutral harness standard and ships a canonica
     └── smoke_install.py
 ```
 
-## Install Into A Target Repository
+## Local Development
 
-Open an agent session in the target repository and give it `installer/install-harness.md`.
-
-The installer uses the canonical GitHub source by default:
-
-```text
-https://github.com/Ssoon-m/phaseloop.git
-```
-
-For local development, override the source path:
-
-```bash
-export HARNESS_SOURCE=/absolute/path/to/phaseloop
-```
-
-The installer copies the canonical core, generates runtime bridges, creates project context docs, and runs smoke verification.
-
-## Local Smoke Test
+Run the local smoke test:
 
 ```bash
 python3 tests/smoke_install.py
 python3 -m py_compile core/scripts/*.py core/.agent-harness/providers/*.py tests/smoke_install.py
 ```
 
-The smoke test creates a temporary target repository, installs the core, generates Claude/Codex bridges, and verifies script entry points.
+To test installation from a local checkout, set:
 
-## Canonical Paths
+```bash
+export HARNESS_SOURCE=/absolute/path/to/phaseloop
+```
 
-- `.agent-harness/skills` is the source of truth for shared skills.
-- `.agent-harness/roles` is the source of truth for neutral roles.
-- `.claude/`, `.agents/`, and `.codex/` are generated bridge locations in target repositories.
-
-Native subagent files are not the standard. The standard is the file contract plus provider execution contract.
+Then give `installer/install-harness.md` to an agent session in a temporary
+target repository.

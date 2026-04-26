@@ -1,0 +1,4 @@
+name = "phase-context"
+description = "Gathers repository context and implementation constraints for a clarified task."
+tools_policy = "read-only"
+sandbox_mode = "read-only"

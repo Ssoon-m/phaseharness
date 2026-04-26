@@ -39,20 +39,73 @@ def set_phase_field(index: dict[str, Any], phase_num: int, **fields: Any) -> Non
             return
 
 
-def build_phase_prompt(root: Path, task_dir: Path, phase: dict[str, Any]) -> str:
+def read_role_prompt(root: Path, role_name: str) -> str:
+    return (root / ".agent-harness" / "roles" / role_name / "prompt.md").read_text()
+
+
+def read_artifact_if_exists(task_dir: Path, rel: str) -> str:
+    path = task_dir / rel
+    return path.read_text() if path.exists() else ""
+
+
+def configured_attempts(config: dict[str, Any], key: str, default: int) -> int:
+    execution = config.get("execution", {})
+    if not isinstance(execution, dict):
+        return default
+    try:
+        return max(1, int(execution.get(key, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def phase_max_attempts(config: dict[str, Any], phase: dict[str, Any]) -> int:
+    value = phase.get("max_attempts")
+    if value is None:
+        return configured_attempts(config, "phase_max_attempts", 1)
+    try:
+        attempts = int(value)
+    except (TypeError, ValueError):
+        return configured_attempts(config, "phase_max_attempts", 1)
+    if attempts < 1:
+        return configured_attempts(config, "phase_max_attempts", 1)
+    return attempts
+
+
+def ensure_generate_artifact(task_dir: Path) -> None:
+    artifact = task_dir / "artifacts" / "04-generate.md"
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    if not artifact.exists():
+        artifact.write_text("# Phase 4: Generate\n\n")
+
+
+def build_phase_prompt(root: Path, task_dir: Path, phase: dict[str, Any], attempt: int, max_attempts: int) -> str:
     phase_num = phase["phase"]
     phase_file = task_dir / f"phase{phase_num}.md"
     if not phase_file.exists():
         raise FileNotFoundError(phase_file)
     phase_content = phase_file.read_text()
     task_index = (task_dir / "index.json").read_text()
+    generate_role = read_role_prompt(root, "phase-generate")
+    artifacts = []
+    for rel in (
+        "artifacts/01-clarify.md",
+        "artifacts/02-context.md",
+        "artifacts/03-plan.md",
+        "artifacts/04-generate.md",
+    ):
+        content = read_artifact_if_exists(task_dir, rel)
+        if content:
+            artifacts.append(f"## {task_dir.relative_to(root)}/{rel}\n\n{content}")
     docs = []
     for rel in ("docs/mission.md", "docs/spec.md", "docs/testing.md", "docs/user-intervention.md"):
         path = root / rel
         if path.exists():
             docs.append(f"## {rel}\n\n{path.read_text()}")
     docs_text = "\n\n".join(docs) if docs else "No project docs found."
+    artifacts_text = "\n\n".join(artifacts) if artifacts else "No prior artifacts found."
     return f"""You are executing one harness phase in an independent session.
+
+{generate_role}
 
 Headless mode:
 - If AGENT_HEADLESS=1, do not ask questions.
@@ -60,11 +113,19 @@ Headless mode:
 - Update `{task_dir.relative_to(root)}/index.json` with the final phase status.
 - Use `context_insufficient`, `validation_failed`, `sandbox_blocked`, or `runtime_error` in `error_message` when failing.
 
+Attempt:
+- This is attempt {attempt} of {max_attempts}.
+- If this attempt cannot complete after reasonable local fixes, record `error`.
+
 ## Task Index
 
 ```json
 {task_index}
 ```
+
+## Prior Artifacts
+
+{artifacts_text}
 
 ## Project Docs
 
@@ -84,7 +145,137 @@ def run_docs_diff(root: Path, task_dir: Path, baseline: str) -> None:
     )
 
 
-def run_phases(task_dir_name: str, provider_name: str | None = None) -> int:
+def build_evaluation_prompt(root: Path, task_dir: Path, attempt: int, max_attempts: int) -> str:
+    evaluate_role = read_role_prompt(root, "phase-evaluate")
+    task_index = (task_dir / "index.json").read_text()
+    artifacts = []
+    for rel in (
+        "artifacts/01-clarify.md",
+        "artifacts/02-context.md",
+        "artifacts/03-plan.md",
+        "artifacts/04-generate.md",
+    ):
+        content = read_artifact_if_exists(task_dir, rel)
+        if content:
+            artifacts.append(f"## {task_dir.relative_to(root)}/{rel}\n\n{content}")
+    docs = []
+    for rel in ("docs/mission.md", "docs/spec.md", "docs/testing.md", "docs/user-intervention.md"):
+        path = root / rel
+        if path.exists():
+            docs.append(f"## {rel}\n\n{path.read_text()}")
+    return f"""You are executing the final evaluation phase in an independent session.
+
+{evaluate_role}
+
+Headless mode:
+- If AGENT_HEADLESS=1, do not ask questions.
+- Fix local validation errors when the fix is clearly in scope.
+- Write `{task_dir.relative_to(root)}/artifacts/05-evaluate.md`.
+- Update `{task_dir.relative_to(root)}/index.json` evaluation status.
+
+Attempt:
+- This is evaluation attempt {attempt} of {max_attempts}.
+
+## Task Index
+
+```json
+{task_index}
+```
+
+## Artifacts
+
+{chr(10).join(artifacts) if artifacts else "No prior artifacts found."}
+
+## Project Docs
+
+{chr(10).join(docs) if docs else "No project docs found."}
+"""
+
+
+def run_evaluation(
+    root: Path,
+    task_dir: Path,
+    provider: Any,
+    config: dict[str, Any],
+    provider_name: str | None,
+    max_attempts_override: int | None = None,
+) -> int:
+    del provider_name
+    index_path = task_dir / "index.json"
+    index = load_json(index_path)
+    evaluation = index.get("evaluation", {})
+    if not isinstance(evaluation, dict):
+        evaluation = {}
+    status = evaluation.get("status")
+    if status in ("pass", "warn"):
+        return 0
+
+    execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
+    max_attempts = max_attempts_override or int(
+        evaluation.get("max_attempts") or configured_attempts(config, "evaluation_max_attempts", 1)
+    )
+    timeout = int(execution.get("check_timeout_sec", 600))
+    sandbox_mode = str(execution.get("sandbox_mode", "workspace-write"))
+    approval_policy = str(execution.get("approval_policy", "never"))
+    prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
+
+    for attempt in range(int(evaluation.get("attempts", 0)) + 1, max_attempts + 1):
+        index = load_json(index_path)
+        evaluation = index.get("evaluation", {})
+        if not isinstance(evaluation, dict):
+            evaluation = {}
+        evaluation.update({"status": "running", "attempts": attempt, "max_attempts": max_attempts})
+        index["evaluation"] = evaluation
+        save_json(index_path, index)
+
+        result = provider.run_prompt(
+            build_evaluation_prompt(root, task_dir, attempt, max_attempts),
+            cwd=str(root),
+            timeout_sec=timeout,
+            sandbox_mode=sandbox_mode,
+            approval_policy=approval_policy,
+            prompt_handoff=prompt_handoff,
+            capture_json=True,
+        )
+        save_json(
+            task_dir / f"evaluation-output-attempt{attempt}.json",
+            {
+                "attempt": attempt,
+                "provider": provider.name,
+                **result,
+            },
+        )
+
+        fresh = load_json(index_path)
+        fresh_eval = fresh.get("evaluation", {})
+        fresh_status = fresh_eval.get("status") if isinstance(fresh_eval, dict) else None
+        if fresh_status in ("pass", "warn"):
+            return 0
+        if attempt < max_attempts:
+            continue
+
+    index = load_json(index_path)
+    evaluation = index.get("evaluation", {})
+    if not isinstance(evaluation, dict):
+        evaluation = {}
+    evaluation.update(
+        {
+            "status": "fail",
+            "failed_at": now_iso(),
+            "error_message": "evaluation did not pass within max_attempts",
+        }
+    )
+    index["evaluation"] = evaluation
+    save_json(index_path, index)
+    return 1
+
+
+def run_phases(
+    task_dir_name: str,
+    provider_name: str | None = None,
+    max_attempts_override: int | None = None,
+    skip_evaluation: bool = False,
+) -> int:
     root = find_project_root()
     config = load_config(root)
     provider = load_provider(provider_name, root)
@@ -104,17 +295,33 @@ def run_phases(task_dir_name: str, provider_name: str | None = None) -> int:
         index = load_json(index_path)
         phase = find_next_phase(index)
         if phase is None:
+            if not skip_evaluation and run_evaluation(root, task_dir, provider, config, provider_name, max_attempts_override) != 0:
+                update_top_index(root, task_dir_name, "error")
+                print(f"evaluation failed: {task_dir_name}")
+                return 1
+            index = load_json(index_path)
             index["completed_at"] = now_iso()
+            index["status"] = "completed"
             save_json(index_path, index)
             update_top_index(root, task_dir_name, "completed")
             print(f"all phases completed: {task_dir_name}")
             return 0
 
         phase_num = int(phase["phase"])
-        set_phase_field(index, phase_num, started_at=phase.get("started_at", now_iso()))
+        max_attempts = max_attempts_override or phase_max_attempts(config, phase)
+        attempt = int(phase.get("attempts", 0)) + 1
+        set_phase_field(
+            index,
+            phase_num,
+            status="running",
+            started_at=phase.get("started_at", now_iso()),
+            attempts=attempt,
+            max_attempts=max_attempts,
+        )
         save_json(index_path, index)
 
-        prompt = build_phase_prompt(root, task_dir, phase)
+        ensure_generate_artifact(task_dir)
+        prompt = build_phase_prompt(root, task_dir, phase, attempt, max_attempts)
         result = provider.run_prompt(
             prompt,
             cwd=str(root),
@@ -149,8 +356,20 @@ def run_phases(task_dir_name: str, provider_name: str | None = None) -> int:
             print(f"phase {phase_num} completed")
             continue
 
+        failure = result["failure_category"] or "runtime_error"
+        if attempt < max_attempts:
+            set_phase_field(
+                fresh_index,
+                phase_num,
+                status="pending",
+                last_failure_at=now_iso(),
+                last_error_message=f"{failure}: retrying phase",
+            )
+            save_json(index_path, fresh_index)
+            print(f"phase {phase_num} retrying ({attempt}/{max_attempts})")
+            continue
+
         if status != "error":
-            failure = result["failure_category"] or "runtime_error"
             set_phase_field(
                 fresh_index,
                 phase_num,
@@ -169,8 +388,10 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run pending phases for a harness task.")
     parser.add_argument("task_dir", help="Task directory name under tasks/")
     parser.add_argument("--provider", default=None, help="Provider name override")
+    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per phase and evaluation")
+    parser.add_argument("--skip-evaluation", action="store_true", help="Do not run the final evaluation step")
     args = parser.parse_args()
-    return run_phases(args.task_dir, args.provider)
+    return run_phases(args.task_dir, args.provider, args.max_attempts, args.skip_evaluation)
 
 
 if __name__ == "__main__":

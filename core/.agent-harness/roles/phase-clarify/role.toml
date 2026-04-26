@@ -1,0 +1,4 @@
+name = "phase-clarify"
+description = "Clarifies a requested task into a concrete goal, non-goals, assumptions, and done conditions."
+tools_policy = "read-only"
+sandbox_mode = "read-only"

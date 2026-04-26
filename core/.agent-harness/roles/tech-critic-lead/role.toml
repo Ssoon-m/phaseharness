@@ -1,6 +1,0 @@
-name = "tech-critic-lead"
-description = "Critical technical reviewer that approves, rejects, or requests revisions for harness plans."
-model_tier = "strong"
-sandbox_mode = "read-only"
-tools_policy = "read-only"
-output_schema = "decision_v1"

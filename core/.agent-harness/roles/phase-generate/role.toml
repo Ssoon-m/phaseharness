@@ -1,0 +1,4 @@
+name = "phase-generate"
+description = "Executes one planned implementation phase and records a generate artifact."
+tools_policy = "read-write"
+sandbox_mode = "workspace-write"
