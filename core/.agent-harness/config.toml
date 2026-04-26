@@ -1,0 +1,35 @@
+schema_version = 1
+default_provider = "auto"
+fallback_provider = ""
+headless_env = "AGENT_HEADLESS"
+
+[paths]
+docs = "docs"
+tasks = "tasks"
+iterations = "iterations"
+prompts = ".agent-harness/prompts"
+skills = ".agent-harness/skills"
+roles = ".agent-harness/roles"
+
+[execution]
+default_timeout_sec = 600
+phase_timeout_sec = 1800
+build_timeout_sec = 14400
+check_timeout_sec = 600
+rollback_timeout_sec = 300
+sandbox_mode = "workspace-write"
+approval_policy = "never"
+prompt_handoff = "stdin"
+
+[providers.claude]
+enabled = true
+binary = "claude"
+
+[providers.codex]
+enabled = true
+binary = "codex"
+
+[bridges]
+skills_mode = "symlink"
+generate_claude_agents = true
+generate_codex_agents = true
