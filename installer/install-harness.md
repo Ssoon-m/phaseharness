@@ -200,13 +200,19 @@ python3 scripts/run-server.py --once
 
 ## 9. README Note
 
-If the target repository has a README, add a short section that says:
+Do not edit the target repository README by default.
 
-- the project uses an agent harness
-- state is stored in `tasks/` and `iterations/`
-- canonical configuration is under `.agent-harness/`
-- runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`
-- headless mode uses `AGENT_HEADLESS=1`
+If the user asks how to document the install, include this optional snippet in
+the final report instead of applying it automatically:
+
+```markdown
+## Agent Harness
+
+This project uses phaseloop. Harness state is stored in `tasks/` and
+`iterations/`, canonical configuration lives under `.agent-harness/`, and
+runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
+Headless runs use `AGENT_HEADLESS=1`.
+```
 
 ## 10. Final Report
 
