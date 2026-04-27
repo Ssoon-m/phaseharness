@@ -55,12 +55,13 @@ AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --provider codex --
 phase. It is not an infinite loop count.
 
 `--commit-mode` defaults to `none`. `final` runs `scripts/commit-result.py`
-only after evaluation passes or warns. `phase` commits after each completed
-generate phase. Evaluation remains local task state and does not create an empty
+only after evaluation passes or warns. `phase` asks the commit skill to commit
+after each completed generate phase using the phase file and task index as
+context. Evaluation remains local task state and does not create an empty
 validation commit. Product commits exclude phaseloop artifacts by default;
-commit subjects come from the work request or phase metadata. Commit steps fail
-closed when the task started from a dirty worktree or unrelated staged changes
-exist.
+commit subjects come from the work request or phase metadata. Phase commits
+should include only paths clearly owned by that phase, even if the repository
+started dirty; unrelated staged changes still fail closed.
 
 Commit message rules:
 

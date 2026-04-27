@@ -34,8 +34,9 @@ Use the phaseloop skill to implement <request> with max attempts 3 and commit mo
 phase. `commit mode` controls whether phaseloop creates git commits.
 If either value is omitted, the skill asks once before using a default.
 
-`--provider claude` or `--provider codex` overrides the configured headless
-runtime. This may differ from the agent session that started phaseloop.
+To force a specific runtime, include it in the skill request, for example
+`using Claude` or `using Codex`. Otherwise phaseloop uses the configured
+default.
 
 ## Commit Modes
 

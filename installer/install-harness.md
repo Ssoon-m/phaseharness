@@ -261,33 +261,36 @@ the default. Product commits exclude phaseloop task artifacts by default.
 
 ## 11. Final Report
 
-Report:
+Use this final report shape. Keep the next step skill-first and copy/pasteable.
+Do not add a "First command to run" section.
 
-- files created or modified
-- default provider and fallback provider
-- whether bridges are symlink or copy
-- whether bridge sync hooks were installed and whether existing hooks were preserved
-- whether the commit skill and `scripts/commit-result.py` were installed
-- smoke verification result
-- any docs that still need human clarification
-- next phaseloop prompt to paste, for example:
+````text
+Installed phaseloop from the canonical installer source:
+https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 
+Created/updated:
+- <short list of installed harness paths>
+
+Key install details:
+- Default provider: <provider>
+- Fallback provider: <provider or none>
+- Bridges: <symlink or copy>
+- Hooks: <installed/updated and whether existing hooks were preserved>
+- Commit support: installed commit skill and scripts/commit-result.py
+- Smoke verification: <passed or failed; mention non-fatal warnings separately>
+
+Docs still needing human clarification:
+- <items, or "none">
+
+Next phaseloop prompt to paste:
 ```text
 Use the phaseloop skill to implement <request> with max attempts 2 and commit mode none.
 ```
 
-Do not present `scripts/run-workflow.py` as the recommended next step. It is an
-internal runner for the skill unless the user explicitly asks to run the CLI.
-
 Suggested commit message:
-
-```text
 chore(harness): install provider-neutral agent harness
+````
 
-- install canonical .agent-harness core
-- add provider adapters and runner scripts
-- generate Claude/Codex bridges
-- install bridge sync hooks
-- add commit skill for completed workflow results
-- add harness docs and task state
-```
+Do not present `scripts/run-workflow.py`, `scripts/run-phases.py`, or
+`AGENT_HEADLESS=1` as the recommended next step. Those are internal runner
+details for the skill unless the user explicitly asks to run the CLI.

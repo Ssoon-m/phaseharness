@@ -48,7 +48,9 @@ phase below.
   `{commit_message or "no phase commit_message was provided"}`
 - Do not commit `tasks/` runtime state unless the phase file explicitly asks for
   phaseloop state to be product history.
-- Do not commit unrelated pre-existing local changes.
+- A path that was dirty before the workflow started may still be committed when
+  this phase clearly owns that path. Do not commit unrelated pre-existing local
+  changes.
 - Do not run `git add .` or repository-root `git add -A`.
 - If ownership is unclear, do not commit and explain why.
 - Do not push.

@@ -34,9 +34,8 @@ Use the phaseloop skill to implement <request> with max attempts 3 and commit mo
 `commit mode`는 phaseloop가 git commit을 자동으로 만들지 여부를 제어합니다.
 둘 중 하나를 생략하면 skill이 기본값을 사용하기 전에 한 번 확인합니다.
 
-`--provider claude` 또는 `--provider codex`를 지정하면 설정된 headless runtime을
-override합니다. 이 runtime은 phaseloop를 시작한 현재 에이전트 세션과 다를 수
-있습니다.
+특정 runtime을 강제하려면 skill 요청에 `using Claude` 또는 `using Codex`처럼
+명시하세요. 생략하면 phaseloop는 설정된 기본값을 사용합니다.
 
 ## Commit Mode
 

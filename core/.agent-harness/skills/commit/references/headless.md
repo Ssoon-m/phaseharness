@@ -13,18 +13,18 @@ This procedure replaces the interactive flow.
   phaseloop phase context.
 - If ownership is unclear, fail without committing.
 - If staged changes already exist, fail and leave them untouched.
-- If the worktree was dirty before the phaseloop task started, do not commit
-  those baseline-dirty paths unless the caller explicitly allows it. A
-  phase-local commit may still commit phase-owned paths that were clean at task
-  start.
+- Baseline-dirty paths are not automatically off limits in a phase-local commit.
+  Commit them only when the provided phase context clearly owns those paths and
+  the diff belongs to that phase. If ownership is unclear, leave them uncommitted.
 - Push only when the caller explicitly requested push.
 
 ## Procedure
 
 1. For a completed phaseloop task result, follow `phaseloop-result.md`.
 2. For a phaseloop phase-local commit, inspect the phase file, task index, git
-   status, and git diff. Stage only paths that clearly belong to that phase.
-   If ownership is unclear, stop without committing.
+   status, and git diff. Stage only paths that clearly belong to that phase,
+   even when those paths were already dirty at task start. If ownership is
+   unclear, stop without committing.
 3. If the caller provided explicit paths and a commit message, stage only those
    paths and commit with that message.
 4. If neither path is deterministic, stop without committing and report why.
