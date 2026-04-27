@@ -52,8 +52,9 @@ phaseloop defaults to `none`.
 
 - `none`: leave changes uncommitted.
 - `final`: create one product commit after evaluation passes or warns.
-- `phase`: commit after each completed generate phase. Evaluation stays local
-  and does not create an empty validation commit.
+- `phase`: ask the commit skill to commit each completed generate phase using
+  phase context. Evaluation stays local and does not create an empty validation
+  commit.
 
 Product commits exclude phaseloop task artifacts by default. Runtime task state
 under `tasks/` stays local unless you explicitly choose to include it.

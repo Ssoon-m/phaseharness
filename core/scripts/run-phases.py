@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import subprocess
-import sys
 from pathlib import Path
 from typing import Any
 
@@ -14,20 +13,101 @@ def log(message: str) -> None:
     print(f"[phaseloop] {message}", flush=True)
 
 
-def commit_phase_result(root: Path, task_dir_name: str, phase_num: int, commit_mode: str) -> int:
+def build_phase_commit_prompt(root: Path, task_dir: Path, phase: dict[str, Any]) -> str:
+    phase_num = phase["phase"]
+    phase_file = task_dir / f"phase{phase_num}.md"
+    phase_content = phase_file.read_text() if phase_file.exists() else ""
+    task_index = (task_dir / "index.json").read_text()
+    commit_skill = (root / ".agent-harness" / "skills" / "commit" / "SKILL.md").read_text()
+    headless_commit = (root / ".agent-harness" / "skills" / "commit" / "references" / "headless.md").read_text()
+    message_guidance = (root / ".agent-harness" / "skills" / "commit" / "references" / "message-guidance.md").read_text()
+    commit_message = str(phase.get("commit_message") or "").strip()
+    return f"""You are running the phaseloop phase commit step in headless mode.
+
+Use the repository commit skill rules to create a git commit for only this
+completed implementation phase. Do not call `scripts/commit-result.py` for this
+phase-local commit; inspect the worktree and stage only files that belong to the
+phase below.
+
+## Commit Skill
+
+{commit_skill}
+
+## Headless Commit Rules
+
+{headless_commit}
+
+## Commit Message Guidance
+
+{message_guidance}
+
+## Phase Commit Contract
+
+- Commit only changes that belong to phase {phase_num}.
+- Prefer this commit message exactly when it fits the actual change:
+  `{commit_message or "no phase commit_message was provided"}`
+- Do not commit `tasks/` runtime state unless the phase file explicitly asks for
+  phaseloop state to be product history.
+- Do not commit unrelated pre-existing local changes.
+- Do not run `git add .` or repository-root `git add -A`.
+- If ownership is unclear, do not commit and explain why.
+- Do not push.
+
+## Task Index
+
+```json
+{task_index}
+```
+
+## Phase File
+
+```markdown
+{phase_content}
+```
+"""
+
+
+def commit_phase_result(
+    root: Path,
+    task_dir: Path,
+    phase: dict[str, Any],
+    provider: Any,
+    commit_mode: str,
+    timeout: int,
+    sandbox_mode: str,
+    approval_policy: str,
+    prompt_handoff: str,
+) -> int:
     if commit_mode != "phase":
         return 0
-    cmd = [
-        sys.executable,
-        str(root / "scripts" / "commit-result.py"),
-        task_dir_name,
-        "--phase",
-        str(phase_num),
-        "--allow-head-move",
-    ]
-    log(f"commit-mode=phase command={' '.join(cmd)}")
-    result = subprocess.run(cmd, cwd=str(root), text=True)
-    return result.returncode
+    phase_num = int(phase["phase"])
+    before = git_head(root)
+    log(f"commit-mode=phase session=commit phase={phase_num} timeout={timeout}s task={task_dir.name}")
+    result = provider.run_prompt(
+        build_phase_commit_prompt(root, task_dir, phase),
+        cwd=str(root),
+        timeout_sec=timeout,
+        sandbox_mode=sandbox_mode,
+        approval_policy=approval_policy,
+        prompt_handoff=prompt_handoff,
+        capture_json=True,
+    )
+    save_json(
+        task_dir / f"phase{phase_num}-commit-output.json",
+        {
+            "phase": phase_num,
+            "provider": provider.name,
+            **result,
+        },
+    )
+    if result["exit_code"] != 0:
+        return int(result["exit_code"])
+    after = git_head(root)
+    if after == before:
+        log(f"phase {phase_num} commit was not created")
+        return 1
+    log(f"phase {phase_num} committed {after[:12]}")
+    return 0
 
 
 def find_next_phase(index: dict[str, Any]) -> dict[str, Any] | None:
@@ -383,7 +463,17 @@ def run_phases(
             save_json(index_path, fresh_index)
             if phase_num == 0:
                 run_docs_diff(root, task_dir, baseline)
-            commit_code = commit_phase_result(root, task_dir_name, phase_num, commit_mode)
+            commit_code = commit_phase_result(
+                root,
+                task_dir,
+                fresh_phase or phase,
+                provider,
+                commit_mode,
+                timeout,
+                sandbox_mode,
+                approval_policy,
+                prompt_handoff,
+            )
             if commit_code != 0:
                 update_top_index(root, task_dir_name, "error")
                 log(f"phase {phase_num} commit failed")

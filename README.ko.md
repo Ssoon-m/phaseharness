@@ -53,8 +53,9 @@ override합니다. 이 runtime은 phaseloop를 시작한 현재 에이전트 세
 
 - `none`: 변경사항을 자동 커밋하지 않습니다.
 - `final`: evaluation이 `pass` 또는 `warn`이면 product commit 하나를 만듭니다.
-- `phase`: 완료된 generate phase마다 commit을 만듭니다. Evaluation은 로컬 상태로
-  남기며 빈 validation commit을 만들지 않습니다.
+- `phase`: 완료된 generate phase마다 phase context를 commit skill에 전달해
+  commit을 만듭니다. Evaluation은 로컬 상태로 남기며 빈 validation commit을
+  만들지 않습니다.
 
 Product commit은 기본적으로 phaseloop task artifact를 포함하지 않습니다. 설치된
 저장소에서는 `tasks/` 아래 runtime task state가 기본적으로 로컬 상태로

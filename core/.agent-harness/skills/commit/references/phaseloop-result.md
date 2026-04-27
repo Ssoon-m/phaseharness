@@ -44,8 +44,9 @@ Available modes:
 
 - `none`: no automatic commit
 - `final`: one commit after the whole workflow succeeds
-- `phase`: one commit after each completed generate phase; evaluation remains
-  local task state and does not create an empty validation commit
+- `phase`: one commit after each completed generate phase, using the commit
+  skill with phase context; evaluation remains local task state and does not
+  create an empty validation commit
 
 ```bash
 AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode none

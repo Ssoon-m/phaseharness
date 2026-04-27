@@ -26,5 +26,6 @@ Rules:
 - Prefer no body. Add a body only when the repository style or the work itself
   clearly needs one.
 - For `phase` commit mode, each planned phase should set a `commit_message` in
-  `tasks/<task-dir>/index.json`; `commit-result.py` uses that message as-is.
+  `tasks/<task-dir>/index.json`; use that message as-is when it matches the
+  actual phase change.
 - Do not create empty validation commits in `phase` mode.
