@@ -62,15 +62,23 @@ Dirty worktree is allowed, but do not overwrite unrelated user changes. If a tar
 Harness-owned target paths:
 
 - `.agent-harness/`
+- `.agent-harness/.gitignore`
 - `.claude/agents/`
 - `.claude/skills`
 - `.agents/skills`
 - `.codex/agents/`
+- `.claude/hooks/phaseloop-sync-bridges.sh`
+- `.codex/hooks/phaseloop-sync-bridges.sh`
+- `.claude/settings.json` phaseloop hook entries only
+- `.codex/hooks.json` phaseloop hook entries only
+- `.codex/config.toml` phaseloop hook entries and `codex_hooks` flag only
 - `scripts/_utils.py`
 - `scripts/gen-bridges.py`
 - `scripts/gen-docs-diff.py`
+- `scripts/install-hooks.py`
 - `scripts/run-phases.py`
 - `scripts/run-workflow.py`
+- `scripts/sync-bridges.py`
 - `docs/mission.md`
 - `docs/spec.md`
 - `docs/testing.md`
@@ -85,6 +93,7 @@ If `HARNESS_SOURCE` is set, verify:
 test -d "$HARNESS_SOURCE/core"
 test -f "$HARNESS_SOURCE/core/.agent-harness/config.toml"
 test -f "$HARNESS_SOURCE/core/scripts/run-workflow.py"
+test -f "$HARNESS_SOURCE/core/scripts/install-hooks.py"
 ```
 
 If `HARNESS_SOURCE` is not set, clone phaseloop to a temp directory:
@@ -112,8 +121,10 @@ cp -R "$HARNESS_SOURCE/core/.agent-harness/." .agent-harness/
 cp "$HARNESS_SOURCE/core/scripts/_utils.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/gen-bridges.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/gen-docs-diff.py" scripts/
+cp "$HARNESS_SOURCE/core/scripts/install-hooks.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/run-phases.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/run-workflow.py" scripts/
+cp "$HARNESS_SOURCE/core/scripts/sync-bridges.py" scripts/
 ```
 
 If any destination already exists and differs, do not blindly overwrite. Read the diff and preserve local project-specific changes unless they are clearly stale generated bridge files.
@@ -174,13 +185,38 @@ Expected generated paths:
 
 These are runtime-specific bridges. The canonical source remains `.agent-harness/skills` and `.agent-harness/roles`.
 
-## 8. Smoke Verification
+## 8. Install Bridge Sync Hooks
+
+Run:
+
+```bash
+python3 scripts/install-hooks.py
+```
+
+Expected managed paths:
+
+- `.claude/hooks/phaseloop-sync-bridges.sh`
+- `.codex/hooks/phaseloop-sync-bridges.sh`
+
+The installer must preserve user hooks:
+
+- If `.claude/settings.json` already has hooks, keep them and add only phaseloop hook entries.
+- If `.codex/hooks.json` already exists, keep it and add only phaseloop hook entries.
+- If `.codex/config.toml` already uses inline hooks and `.codex/hooks.json` is absent, append one managed phaseloop hook block.
+- If `.codex/hooks.json` and inline Codex hooks both already exist, merge phaseloop into `hooks.json`; do not create another representation.
+- If existing hook JSON is invalid, stop and ask the user before editing it.
+
+The common hook command is `scripts/sync-bridges.py --hook`. Runtime hook files are only thin adapters. When `.agent-harness/` changes, the hook regenerates `.claude/`, `.agents/`, and `.codex/` bridge files by running `scripts/gen-bridges.py`.
+
+## 9. Smoke Verification
 
 Run:
 
 ```bash
 python3 scripts/run-workflow.py --help
 python3 scripts/run-phases.py --help
+python3 scripts/install-hooks.py --help
+python3 scripts/sync-bridges.py --help
 python3 scripts/gen-docs-diff.py --help
 python3 scripts/gen-bridges.py --help
 python3 -m py_compile scripts/*.py .agent-harness/providers/*.py
@@ -198,7 +234,7 @@ The default runtime strategy is balanced: one analysis agent session for
 clarify, context, and plan; build agent session(s) for implementation phases;
 and one evaluate agent session for final verification.
 
-## 9. README Note
+## 10. README Note
 
 Do not edit the target repository README by default.
 
@@ -211,17 +247,19 @@ the final report instead of applying it automatically:
 This project uses phaseloop. Harness state is stored in `tasks/` and
 task artifacts, canonical configuration lives under `.agent-harness/`, and
 runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
+Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
 Headless workflow runs use `AGENT_HEADLESS=1` with balanced
 analysis/build/evaluate agent sessions.
 ```
 
-## 10. Final Report
+## 11. Final Report
 
 Report:
 
 - files created or modified
 - default provider and fallback provider
 - whether bridges are symlink or copy
+- whether bridge sync hooks were installed and whether existing hooks were preserved
 - smoke verification result
 - any docs that still need human clarification
 - first command to run
@@ -234,5 +272,6 @@ chore(harness): install provider-neutral agent harness
 - install canonical .agent-harness core
 - add provider adapters and runner scripts
 - generate Claude/Codex bridges
+- install bridge sync hooks
 - add harness docs and task state
 ```

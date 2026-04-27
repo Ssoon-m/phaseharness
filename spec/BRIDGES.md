@@ -48,11 +48,11 @@ Canonical workflow roles:
 - `phase-generate`
 - `phase-evaluate`
 
-Automation may call these roles as isolated provider sessions. Runtime bridges
+Automation may call these roles as isolated headless agent sessions. Runtime bridges
 also expose them as native subagents for interactive Claude/Codex use.
 
 In the default balanced workflow, the orchestrator combines
-`phase-clarify`, `phase-context`, and `phase-plan` into one analysis provider
+`phase-clarify`, `phase-context`, and `phase-plan` into one analysis agent
 session. The roles remain separate canonical prompt assets so the contract stays
 readable and bridgeable even when a session executes more than one logical role.
 
@@ -80,6 +80,42 @@ Required behavior:
 - Create skill symlinks when safe.
 - Fall back to generated skill copies when symlinks fail and copy mode is requested.
 - Never treat generated bridge files as canonical source.
+
+## Bridge Sync Hooks
+
+The common bridge sync implementation is:
+
+```text
+scripts/sync-bridges.py
+```
+
+Runtime hook adapters call that common script:
+
+```text
+.claude/hooks/phaseloop-sync-bridges.sh
+.codex/hooks/phaseloop-sync-bridges.sh
+```
+
+`scripts/install-hooks.py` installs the adapters and merges runtime hook
+configuration. It must be idempotent and must preserve user hooks.
+
+Merge rules:
+
+- Do not overwrite `.claude/settings.json`.
+- Do not overwrite `.codex/hooks.json`.
+- Do not overwrite `.codex/config.toml`.
+- Add or replace only hook entries whose command contains `phaseloop-sync-bridges`.
+- If Codex already has `.codex/hooks.json`, merge phaseloop into that file.
+- If Codex only has inline hooks in `.codex/config.toml`, append one managed
+  phaseloop block there.
+- If both Codex hook forms already exist, do not create a new representation;
+  merge into `.codex/hooks.json`.
+- If existing hook JSON is invalid, stop instead of guessing.
+
+The sync hook fingerprints `.agent-harness/` and runs
+`scripts/gen-bridges.py` when canonical harness files change. The fingerprint
+state is stored in `.agent-harness/.bridge-sync-state.json`, which is ignored by
+`.agent-harness/.gitignore`.
 
 ## Claude Bridge Mapping
 

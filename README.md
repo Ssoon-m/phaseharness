@@ -113,11 +113,16 @@ generated bridges:
 
 .claude/skills
 .claude/agents/phase-*.md
+.claude/hooks/phaseloop-sync-bridges.sh
 .agents/skills
 .codex/agents/phase-*.toml
+.codex/hooks/phaseloop-sync-bridges.sh
 ```
 
 Edit canonical files under `.agent-harness/`, not generated bridge files.
+Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
+Existing Claude/Codex hooks are preserved; phaseloop only adds or updates its
+own hook entries.
 
 ## Monorepos
 

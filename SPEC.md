@@ -60,6 +60,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
   core/
     .agent-harness/
       config.toml
+      .gitignore
       skills/
         phaseloop/
       roles/
@@ -75,8 +76,10 @@ canonical source는 `.agent-harness/` 아래에 있다.
       _utils.py
       gen-bridges.py
       gen-docs-diff.py
+      install-hooks.py
       run-phases.py
       run-workflow.py
+      sync-bridges.py
     templates/
       docs/
 ```
@@ -89,6 +92,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
 <target_repo>/
   .agent-harness/
     config.toml
+    .gitignore
     skills/
       phaseloop/
     roles/
@@ -108,8 +112,10 @@ canonical source는 `.agent-harness/` 아래에 있다.
     _utils.py
     gen-bridges.py
     gen-docs-diff.py
+    install-hooks.py
     run-phases.py
     run-workflow.py
+    sync-bridges.py
   docs/
     mission.md
     spec.md
@@ -120,6 +126,8 @@ canonical source는 `.agent-harness/` 아래에 있다.
 
   .claude/
     skills/ -> ../.agent-harness/skills
+    hooks/
+      phaseloop-sync-bridges.sh
     agents/
       phase-clarify.md
       phase-context.md
@@ -129,6 +137,8 @@ canonical source는 `.agent-harness/` 아래에 있다.
   .agents/
     skills/ -> ../.agent-harness/skills
   .codex/
+    hooks/
+      phaseloop-sync-bridges.sh
     agents/
       phase-clarify.toml
       phase-context.toml
@@ -137,7 +147,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
       phase-evaluate.toml
 ```
 
-`.claude/`, `.agents/`, `.codex/`는 generated bridge다. 직접 수정 대상이 아니다.
+`.claude/`, `.agents/`, `.codex/`의 phaseloop bridge 파일은 generated bridge다. 직접 수정 대상이 아니다. 기존 사용자 hook 설정은 보존해야 하며, phaseloop가 관리하는 hook entry만 추가 또는 교체한다.
 
 ## 6. Workflow
 
@@ -230,6 +240,22 @@ roles:
 
 Bridge 파일은 generated output이다. canonical source는 항상 `.agent-harness/`다.
 
+bridge sync hooks:
+
+- common implementation: `scripts/sync-bridges.py`
+- installer: `scripts/install-hooks.py`
+- Claude adapter: `.claude/hooks/phaseloop-sync-bridges.sh`
+- Codex adapter: `.codex/hooks/phaseloop-sync-bridges.sh`
+
+hook 설치는 idempotent merge여야 한다.
+
+- 기존 hook entry를 삭제하지 않는다.
+- 기존 hook 파일을 통째로 덮어쓰지 않는다.
+- phaseloop command가 이미 있으면 해당 entry만 최신 command로 교체한다.
+- Codex는 기존 `.codex/hooks.json`이 있으면 거기에 병합한다.
+- `.codex/config.toml` inline hooks만 있고 `hooks.json`이 없으면 managed block을 append한다.
+- JSON/TOML이 깨져 있으면 자동 수정하지 않고 멈춘다.
+
 ## 11. Installer
 
 installer는 아래만 수행한다.
@@ -239,6 +265,7 @@ installer는 아래만 수행한다.
 - docs template 생성
 - provider config 확인
 - bridge 생성
+- bridge sync hook 병합
 - smoke verification
 
 installer는 타겟 레포 README를 자동 수정하지 않는다.

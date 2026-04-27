@@ -10,6 +10,7 @@ The goal is not to generate a different automation system for every target repos
 - provider adapters for runtime-specific invocation details
 - a five-phase artifact workflow for explicit work requests
 - balanced headless session boundaries for analysis, build, and evaluate
+- bridge sync hooks that keep generated Claude/Codex bridge files current
 
 ## Target User Flow
 
@@ -34,6 +35,7 @@ The stable units are:
 - session lifecycle rules for analysis, build, and evaluate
 - provider-neutral prompt execution
 - skill and role bridges generated from canonical sources
+- hook adapters that call one shared bridge sync script
 
 ## Non-goals
 
