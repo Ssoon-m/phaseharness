@@ -235,19 +235,6 @@ command -v claude || true
 command -v codex || true
 ```
 
-Optional explicit work request:
-
-```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode none
-```
-
-Optional work requests with automatic commits:
-
-```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode final
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <larger request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode phase
-```
-
 The default runtime strategy is balanced: one analysis agent session for
 clarify, context, and plan; build agent session(s) for implementation phases;
 and one evaluate agent session for final verification.
@@ -266,13 +253,10 @@ This project uses phaseloop. Harness state is stored in `tasks/` and
 task artifacts, canonical configuration lives under `.agent-harness/`, and
 runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
 Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
-Headless workflow runs use `AGENT_HEADLESS=1` with balanced
-analysis/build/evaluate agent sessions.
-Completed phaseloop results can be committed with the `commit` skill or
-`scripts/commit-result.py`; automatic commit is controlled by
-`--commit-mode none|final|phase`, with `none` as the default. Product commits
-exclude phaseloop task artifacts by default. Commit subjects come from the work
-request or phase metadata.
+phaseloop uses balanced analysis, build, and evaluate agent sessions.
+Completed phaseloop results can be committed with the `commit` skill. Automatic
+commit is controlled by commit mode `none`, `final`, or `phase`, with `none` as
+the default. Product commits exclude phaseloop task artifacts by default.
 ```
 
 ## 11. Final Report
@@ -286,7 +270,14 @@ Report:
 - whether the commit skill and `scripts/commit-result.py` were installed
 - smoke verification result
 - any docs that still need human clarification
-- first command to run
+- next phaseloop prompt to paste, for example:
+
+```text
+Use the phaseloop skill to implement <request> with max attempts 2 and commit mode none.
+```
+
+Do not present `scripts/run-workflow.py` as the recommended next step. It is an
+internal runner for the skill unless the user explicitly asks to run the CLI.
 
 Suggested commit message:
 

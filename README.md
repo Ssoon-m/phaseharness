@@ -34,15 +34,6 @@ Use the phaseloop skill to implement <request> with max attempts 3 and commit mo
 phase. `commit mode` controls whether phaseloop creates git commits.
 If either value is omitted, the skill asks once before using a default.
 
-You can also run the workflow directly:
-
-```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <request>" \
-  --max-attempts 3 \
-  --session-timeout-sec 600 \
-  --commit-mode none
-```
-
 `--provider claude` or `--provider codex` overrides the configured headless
 runtime. This may differ from the agent session that started phaseloop.
 
