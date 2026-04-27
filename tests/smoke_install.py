@@ -35,6 +35,7 @@ def copy_core(target: Path) -> None:
         shutil.copy2(script, target / "scripts" / script.name)
     for doc in (ROOT / "core" / "templates" / "docs").glob("*.md"):
         shutil.copy2(doc, target / "docs" / doc.name)
+    shutil.copy2(ROOT / "core" / "templates" / "tasks" / ".gitignore", target / "tasks" / ".gitignore")
 
 
 def write_existing_hooks(target: Path) -> None:
@@ -163,6 +164,7 @@ def main() -> int:
             ".agents/skills",
             ".claude/hooks/phaseloop-sync-bridges.sh",
             ".codex/hooks/phaseloop-sync-bridges.sh",
+            "tasks/.gitignore",
             ".claude/agents/phase-clarify.md",
             ".codex/agents/phase-clarify.toml",
             ".claude/agents/phase-context.md",
@@ -180,6 +182,7 @@ def main() -> int:
 
         run(["python3", "scripts/run-workflow.py", "--help"], target)
         run(["python3", "scripts/run-phases.py", "--help"], target)
+        run(["python3", "scripts/commit-result.py", "--help"], target)
         run(["python3", "scripts/install-hooks.py", "--help"], target)
         run(["python3", "scripts/sync-bridges.py", "--help"], target)
         run(["python3", "scripts/gen-docs-diff.py", "--help"], target)
@@ -189,6 +192,7 @@ def main() -> int:
                 "-m",
                 "py_compile",
                 "scripts/_utils.py",
+                "scripts/commit-result.py",
                 "scripts/gen-bridges.py",
                 "scripts/gen-docs-diff.py",
                 "scripts/install-hooks.py",

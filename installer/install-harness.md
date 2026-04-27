@@ -73,6 +73,7 @@ Harness-owned target paths:
 - `.codex/hooks.json` phaseloop hook entries only
 - `.codex/config.toml` phaseloop hook entries and `codex_hooks` flag only
 - `scripts/_utils.py`
+- `scripts/commit-result.py`
 - `scripts/gen-bridges.py`
 - `scripts/gen-docs-diff.py`
 - `scripts/install-hooks.py`
@@ -83,6 +84,7 @@ Harness-owned target paths:
 - `docs/spec.md`
 - `docs/testing.md`
 - `docs/user-intervention.md`
+- `tasks/.gitignore`
 - `tasks/index.json`
 
 ## 2. Resolve Harness Source
@@ -93,6 +95,7 @@ If `HARNESS_SOURCE` is set, verify:
 test -d "$HARNESS_SOURCE/core"
 test -f "$HARNESS_SOURCE/core/.agent-harness/config.toml"
 test -f "$HARNESS_SOURCE/core/scripts/run-workflow.py"
+test -f "$HARNESS_SOURCE/core/scripts/commit-result.py"
 test -f "$HARNESS_SOURCE/core/scripts/install-hooks.py"
 ```
 
@@ -119,6 +122,7 @@ Copy or merge the canonical implementation:
 ```bash
 cp -R "$HARNESS_SOURCE/core/.agent-harness/." .agent-harness/
 cp "$HARNESS_SOURCE/core/scripts/_utils.py" scripts/
+cp "$HARNESS_SOURCE/core/scripts/commit-result.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/gen-bridges.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/gen-docs-diff.py" scripts/
 cp "$HARNESS_SOURCE/core/scripts/install-hooks.py" scripts/
@@ -150,6 +154,12 @@ Create `tasks/index.json` if missing:
 {
   "tasks": []
 }
+```
+
+Create `tasks/.gitignore` if missing so runtime task artifacts remain local by default:
+
+```bash
+test -f tasks/.gitignore || cp "$HARNESS_SOURCE/core/templates/tasks/.gitignore" tasks/.gitignore
 ```
 
 ## 6. Configure Providers
@@ -215,6 +225,7 @@ Run:
 ```bash
 python3 scripts/run-workflow.py --help
 python3 scripts/run-phases.py --help
+python3 scripts/commit-result.py --help
 python3 scripts/install-hooks.py --help
 python3 scripts/sync-bridges.py --help
 python3 scripts/gen-docs-diff.py --help
@@ -227,7 +238,14 @@ command -v codex || true
 Optional explicit work request:
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2 --session-timeout-sec 600
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode none
+```
+
+Optional work requests with automatic commits:
+
+```bash
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode final
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <larger request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode phase
 ```
 
 The default runtime strategy is balanced: one analysis agent session for
@@ -250,6 +268,11 @@ runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
 Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
 Headless workflow runs use `AGENT_HEADLESS=1` with balanced
 analysis/build/evaluate agent sessions.
+Completed phaseloop results can be committed with the `commit` skill or
+`scripts/commit-result.py`; automatic commit is controlled by
+`--commit-mode none|final|phase`, with `none` as the default. Product commits
+exclude phaseloop task artifacts by default. Commit subjects come from the work
+request or phase metadata.
 ```
 
 ## 11. Final Report
@@ -260,6 +283,7 @@ Report:
 - default provider and fallback provider
 - whether bridges are symlink or copy
 - whether bridge sync hooks were installed and whether existing hooks were preserved
+- whether the commit skill and `scripts/commit-result.py` were installed
 - smoke verification result
 - any docs that still need human clarification
 - first command to run
@@ -273,5 +297,6 @@ chore(harness): install provider-neutral agent harness
 - add provider adapters and runner scripts
 - generate Claude/Codex bridges
 - install bridge sync hooks
+- add commit skill for completed workflow results
 - add harness docs and task state
 ```

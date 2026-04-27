@@ -19,6 +19,7 @@ Minimum state files:
 - `tasks/<task-dir>/artifacts/04-generate.md`
 - `tasks/<task-dir>/artifacts/05-evaluate.md`
 - `tasks/<task-dir>/docs-diff.md`
+- optional `commit` metadata in `tasks/<task-dir>/index.json`
 
 Every generated JSON state file should include `schema_version` once the first stable release is cut. Until then, scripts must tolerate missing `schema_version`.
 
@@ -62,6 +63,11 @@ Allowed task statuses:
   ],
   "max_attempts": 2,
   "session_strategy": "balanced",
+  "git_baseline": {
+    "head": "abcdef123456",
+    "status": "",
+    "dirty_paths": []
+  },
   "sessions": [
     {
       "session": "analysis",
@@ -114,6 +120,12 @@ Allowed task statuses:
     "status": "pending",
     "attempts": 0,
     "max_attempts": 2
+  },
+  "commit": {
+    "status": "completed",
+    "message": "feat: example",
+    "requested_at": "2026-04-26T12:20:00+0900",
+    "baseline_head": "abcdef123456"
   }
 }
 ```
@@ -134,6 +146,15 @@ Allowed evaluation statuses:
 - `pass`
 - `warn`
 - `fail`
+
+Allowed commit statuses:
+
+- `completed`
+- `error`
+
+`git_baseline` is captured when the task is created. It records the starting
+HEAD and dirty paths so automatic commit can avoid mixing pre-existing user
+changes into the workflow result.
 
 ## Artifact Workflow
 
@@ -156,6 +177,44 @@ tracked in `sessions`. The next agent session must read previous artifacts
 from disk; conversation memory is not part of the contract.
 
 `done_when` defines when the task is finished. Evaluation may pass or warn only when these conditions and phase acceptance criteria are satisfied.
+
+## Commit Result
+
+Commit is an optional post-workflow action, not a required sixth phase.
+
+The default commit mode is `none`. The phaseloop skill must determine commit
+mode before starting a workflow:
+
+- `none`: do not commit automatically.
+- `final`: call `scripts/commit-result.py` after evaluation is `pass` or
+  `warn`.
+- `phase`: call `scripts/commit-result.py --phase <N> --allow-head-move` after
+  each completed generate phase. Evaluation remains local task state and must
+  not create an empty validation commit.
+
+A user or agent may also run the `commit` skill after inspecting a completed
+task.
+
+Automatic commit must fail closed when:
+
+- the task is not `completed`
+- evaluation is not `pass` or `warn`
+- `git HEAD` changed after the task was created
+- a path that was dirty at task creation is still dirty
+
+The commit script may stage current changed paths only after excluding baseline
+dirty paths. It must not push.
+
+By default, phaseloop task state under `tasks/` is excluded from product
+commits. Commit subjects should come from explicit user input, task metadata, or
+phase `commit_message` fields, and should not expose phaseloop internal task
+paths by default. `--include-harness-state` is the explicit opt-in for
+committing phaseloop state files. Installed target repositories should ignore
+runtime task state with `tasks/.gitignore`.
+
+Automatic commit assumes no unrelated concurrent edits are made after task
+creation. If that assumption is not true, the user should commit manually with
+explicit staging.
 
 ## Implementation Phases
 

@@ -29,22 +29,46 @@ agent session for every small logical phase.
    - If the user already specified it, use that value.
    - If not, ask once: `How many attempts should each phase get? Default is 2.`
    - Do not start the workflow until the user chooses a number or explicitly accepts the default.
-3. Use `--session-timeout-sec 600` unless the user or repository context suggests a different value.
-4. Run:
+3. Determine `--commit-mode` before starting.
+   - If the user already specified `none`, `final`, or `phase`, use that value.
+   - If not, ask once: `Commit mode for this phaseloop task? none, final, or phase. Default is none.`
+   - `none`: do not commit automatically.
+   - `final`: create one commit after the whole workflow succeeds.
+   - `phase`: create commits after completed generate phases.
+   - If the user does not choose and accepts the default, use `none`.
+4. Use `--session-timeout-sec 600` unless the user or repository context suggests a different value.
+5. Run:
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts <attempts> --session-timeout-sec 600
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts <attempts> --session-timeout-sec 600 --commit-mode <mode>
 ```
 
 Provider-specific examples:
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --provider codex --max-attempts 2 --session-timeout-sec 600
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --provider claude --max-attempts 2 --session-timeout-sec 600
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --provider codex --max-attempts 2 --session-timeout-sec 600 --commit-mode none
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --provider claude --max-attempts 2 --session-timeout-sec 600 --commit-mode final
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --provider codex --max-attempts 2 --session-timeout-sec 600 --commit-mode phase
 ```
 
 `--max-attempts` is the retry budget for each workflow session and implementation
 phase. It is not an infinite loop count.
+
+`--commit-mode` defaults to `none`. `final` runs `scripts/commit-result.py`
+only after evaluation passes or warns. `phase` commits after each completed
+generate phase. Evaluation remains local task state and does not create an empty
+validation commit. Product commits exclude phaseloop artifacts by default;
+commit subjects come from the work request or phase metadata. Commit steps fail
+closed when the task started from a dirty worktree or unrelated staged changes
+exist.
+
+Commit message rules:
+
+- Describe the work itself.
+- Do not mention phase numbers.
+- Do not mention `tasks/`, artifacts, or phaseloop internal paths.
+- Do not list changed files.
+- Prefer the repository's recent commit style; otherwise use `<type>: <summary>`.
 
 ## Workflow
 
@@ -75,9 +99,12 @@ Rules:
 - Do not ask questions when `AGENT_HEADLESS=1`.
 - In an interactive agent session, require a user-selected `--max-attempts`
   value or explicit acceptance of the default before running.
+- In an interactive agent session, require a user-selected `--commit-mode`
+  value or explicit acceptance of default `none` before running.
 - Use the current conversation only to start the runner, monitor output, and
   report the resulting artifacts.
 - If the request is too broad, the analysis session should choose the smallest
   useful increment and record deferred scope.
 - Respect `--max-attempts`; do not retry forever.
 - Do not push.
+- Default to `--commit-mode none`.

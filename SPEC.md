@@ -14,6 +14,7 @@ phaseloop는 Claude Code와 Codex에서 함께 사용할 수 있는 설치형 ag
 2. 사용자가 installer URL을 에이전트에게 준다.
 3. 에이전트가 이 저장소의 canonical core를 타겟 레포에 설치한다.
 4. 사용자는 `phaseloop` skill 또는 `scripts/run-workflow.py`로 작업을 실행한다.
+5. 사용자가 선택한 commit mode에 따라 성공한 workflow 결과를 commit한다. 기본값은 `none`이다.
 
 ## 2. Non-goals
 
@@ -42,6 +43,8 @@ canonical source는 `.agent-harness/` 아래에 있다.
 - `tasks/<task-dir>/phase<N>-output.json`
 - `tasks/<task-dir>/generate-output.json`
 - `tasks/<task-dir>/evaluate-output-attempt<N>.json`
+- `tasks/<task-dir>/index.json`의 `git_baseline`
+- `tasks/<task-dir>/index.json`의 optional `commit`
 
 대화 context는 계약이 아니다. 다음 단계는 이전 단계의 artifact 파일을 읽고 진행해야 한다.
 
@@ -63,6 +66,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
       .gitignore
       skills/
         phaseloop/
+        commit/
       roles/
         phase-clarify/
         phase-context/
@@ -77,6 +81,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
       gen-bridges.py
       gen-docs-diff.py
       install-hooks.py
+      commit-result.py
       run-phases.py
       run-workflow.py
       sync-bridges.py
@@ -95,6 +100,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
     .gitignore
     skills/
       phaseloop/
+      commit/
     roles/
       phase-clarify/
       phase-context/
@@ -113,6 +119,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
     gen-bridges.py
     gen-docs-diff.py
     install-hooks.py
+    commit-result.py
     run-phases.py
     run-workflow.py
     sync-bridges.py
@@ -122,6 +129,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
     testing.md
     user-intervention.md
   tasks/
+    .gitignore
     index.json
 
   .claude/
@@ -170,6 +178,7 @@ Use the phaseloop skill to implement <small request>.
 3. `plan`: task index와 phase 파일을 생성한다.
 4. `generate`: phase 파일을 순서대로 실행하고 구현한다.
 5. `evaluate`: done condition과 acceptance criteria를 검증한다.
+6. optional `commit`: 사용자가 `final` 또는 `phase` commit mode를 선택한 경우 완료된 결과를 git commit으로 남긴다.
 
 기본 에이전트 세션 경계는 logical phase와 1:1이 아니다.
 
@@ -180,6 +189,25 @@ Use the phaseloop skill to implement <small request>.
 이 전략은 앞 단계의 탐색 대화가 구현/검증 context에 계속 쌓이는 것을 막으면서도, 작은 logical phase마다 AGENTS.md 같은 runtime startup context를 반복 로드하는 비용을 줄인다.
 
 표준 결과는 항상 artifact 파일이다. native subagent bridge는 interactive convenience일 수 있지만 lifecycle correctness의 기준은 아니다.
+
+성공 후 commit은 workflow의 기본 단계가 아니다. 기본 commit mode는 `none`이며, phaseloop skill은 실행 전에 `none`, `final`, `phase` 중 하나를 확인해야 한다.
+
+commit mode:
+
+- `none`: 자동 commit을 만들지 않는다.
+- `final`: evaluation이 `pass` 또는 `warn`이면 workflow 마지막에 commit 하나를 만든다.
+- `phase`: 완료된 generate phase마다 commit을 만든다. evaluation은 local task state로만 남기며 빈 validation commit을 만들지 않는다.
+
+자동 product commit은 기본적으로 `tasks/<task-dir>/artifacts/*` 같은 phaseloop state 파일을 포함하지 않는다. commit subject는 작업 요청 또는 phase metadata의 `commit_message`를 사용한다. 설치된 타겟 레포는 `tasks/.gitignore`로 runtime task state를 기본 ignore한다. phaseloop state 파일을 commit해야 할 때는 사용자가 명시적으로 `--include-harness-state`를 선택해야 한다.
+
+commit 단계는 아래 조건을 만족해야 한다.
+
+- task 상태가 `completed`다.
+- evaluation 상태가 `pass` 또는 `warn`이다.
+- workflow 시작 시점의 `git HEAD`와 현재 `git HEAD`가 같다.
+- workflow 시작 전에 이미 dirty였던 path가 자동 stage 대상에 섞이지 않는다.
+
+조건을 만족하지 못하면 자동 commit은 실패로 끝나고, 사용자가 직접 staging 범위를 판단해야 한다.
 
 ## 7. Retry Contract
 

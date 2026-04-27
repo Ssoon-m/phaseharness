@@ -10,7 +10,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from _utils import ensure_base_state, find_project_root, load_config, load_json, load_provider, now_iso, save_json
+from _utils import ensure_base_state, find_project_root, git, git_head, load_config, load_json, load_provider, now_iso, save_json
 
 
 ARTIFACT_AGENT_PHASES = [
@@ -123,6 +123,58 @@ def log(message: str) -> None:
     print(f"[phaseloop] {message}", flush=True)
 
 
+def parse_status_paths(status: str) -> list[str]:
+    paths: list[str] = []
+    for line in status.splitlines():
+        if len(line) < 4:
+            continue
+        path = line[3:]
+        if " -> " in path:
+            old_path, new_path = path.split(" -> ", 1)
+            paths.extend([old_path, new_path])
+        else:
+            paths.append(path)
+    return sorted(set(paths))
+
+
+def parse_porcelain_z_paths(status: str) -> list[str]:
+    paths: set[str] = set()
+    chunks = status.split("\0")
+    i = 0
+    while i < len(chunks):
+        raw = chunks[i]
+        i += 1
+        if not raw or len(raw) < 4:
+            continue
+        code = raw[:2]
+        paths.add(raw[3:])
+        if "R" in code or "C" in code:
+            if i < len(chunks) and chunks[i]:
+                paths.add(chunks[i])
+                i += 1
+    return sorted(paths)
+
+
+def git_baseline(root: Path) -> dict[str, Any]:
+    try:
+        head = git_head(root)
+    except Exception:
+        head = ""
+    status_result = git("status", "--short", root=root)
+    status = status_result.stdout if status_result.returncode == 0 else ""
+    porcelain_result = git("status", "--porcelain=v1", "-z", root=root)
+    dirty_paths = (
+        parse_porcelain_z_paths(porcelain_result.stdout)
+        if porcelain_result.returncode == 0
+        else parse_status_paths(status)
+    )
+    return {
+        "head": head,
+        "status": status,
+        "dirty_paths": dirty_paths,
+    }
+
+
 def create_task(root: Path, request: str, task_name: str, max_attempts: int, session_strategy: str) -> Path:
     ensure_base_state(root)
     task_id = next_task_number(root)
@@ -140,6 +192,7 @@ def create_task(root: Path, request: str, task_name: str, max_attempts: int, ses
         "done_when": [],
         "max_attempts": max_attempts,
         "session_strategy": session_strategy,
+        "git_baseline": git_baseline(root),
         "sessions": session_status_template(max_attempts),
         "workflow": workflow_status_template(max_attempts),
         "artifacts": {
@@ -469,7 +522,14 @@ def run_artifact_phase(
     return 1
 
 
-def run_generate(root: Path, task_dir: Path, provider_name: str | None, max_attempts: int, timeout_sec: int) -> int:
+def run_generate(
+    root: Path,
+    task_dir: Path,
+    provider_name: str | None,
+    max_attempts: int,
+    timeout_sec: int,
+    commit_mode: str,
+) -> int:
     artifact = task_dir / "artifacts" / "04-generate.md"
     if not artifact.exists():
         artifact.write_text("# Phase 4: Generate\n\n")
@@ -487,6 +547,8 @@ def run_generate(root: Path, task_dir: Path, provider_name: str | None, max_atte
     ]
     if provider_name:
         cmd.extend(["--provider", provider_name])
+    if commit_mode == "phase":
+        cmd.extend(["--commit-mode", "phase"])
     log(f"phase=generate command={' '.join(cmd)}")
     index = load_json(task_dir / "index.json")
     phase_count = len(index.get("phases", [])) if isinstance(index.get("phases"), list) else 1
@@ -582,6 +644,8 @@ def run_workflow(
     task_name: str | None,
     max_attempts: int,
     session_timeout_sec: int,
+    commit_mode: str = "none",
+    commit_message: str | None = None,
 ) -> int:
     root = find_project_root()
     config = load_config(root)
@@ -598,7 +662,7 @@ def run_workflow(
         update_top_status(root, task_dir, "error")
         return code
 
-    code = run_generate(root, task_dir, provider_name, max_attempts, session_timeout_sec)
+    code = run_generate(root, task_dir, provider_name, max_attempts, session_timeout_sec, commit_mode)
     if code != 0:
         update_top_status(root, task_dir, "error")
         return code
@@ -626,6 +690,14 @@ def run_workflow(
     save_json(task_dir / "index.json", index)
     update_top_status(root, task_dir, "completed")
     log(f"workflow completed: tasks/{task_dir.name}")
+
+    if commit_mode == "final":
+        cmd = [sys.executable, str(root / "scripts" / "commit-result.py"), task_dir.name]
+        if commit_message:
+            cmd.extend(["--message", commit_message])
+        log(f"commit-mode=final command={' '.join(cmd)}")
+        result = subprocess.run(cmd, cwd=str(root), text=True)
+        return result.returncode
     return 0
 
 
@@ -640,12 +712,25 @@ def main() -> int:
     parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts for analysis, build phases, and evaluate")
     parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
     parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--commit-mode", choices=["none", "final", "phase"], default=None, help="Commit mode: none, final, or phase")
+    parser.add_argument("--commit-on-success", action="store_true", help=argparse.SUPPRESS)
+    parser.add_argument("--commit-message", default=None, help="Commit message to use with --commit-mode final")
     args = parser.parse_args()
 
     root = find_project_root()
     config = load_config(root)
     execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
     max_attempts = args.max_attempts or int(execution.get("workflow_max_attempts", 2))
+    commit_mode = args.commit_mode or str(execution.get("commit_mode", "none"))
+    if args.commit_on_success:
+        if args.commit_mode and args.commit_mode != "final":
+            parser.error("--commit-on-success is only compatible with --commit-mode final")
+        commit_mode = "final"
+    if commit_message := args.commit_message:
+        if commit_mode != "final":
+            parser.error("--commit-message requires --commit-mode final")
+    if commit_mode not in ("none", "final", "phase"):
+        parser.error("--commit-mode must be one of: none, final, phase")
     session_timeout_sec = (
         args.session_timeout_sec
         or args.phase_timeout_sec
@@ -658,7 +743,15 @@ def main() -> int:
         request = " ".join(args.request).strip()
     if not request:
         parser.error("request text or --request-file is required")
-    return run_workflow(request, args.provider, args.task_name, max(1, max_attempts), max(1, session_timeout_sec))
+    return run_workflow(
+        request,
+        args.provider,
+        args.task_name,
+        max(1, max_attempts),
+        max(1, session_timeout_sec),
+        commit_mode,
+        commit_message,
+    )
 
 
 if __name__ == "__main__":

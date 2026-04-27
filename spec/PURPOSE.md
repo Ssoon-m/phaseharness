@@ -11,6 +11,8 @@ The goal is not to generate a different automation system for every target repos
 - a five-phase artifact workflow for explicit work requests
 - balanced headless session boundaries for analysis, build, and evaluate
 - bridge sync hooks that keep generated Claude/Codex bridge files current
+- an optional commit skill for completed workflow results
+- explicit `none`, `final`, and `phase` commit modes, defaulting to `none`
 
 ## Target User Flow
 
@@ -36,6 +38,7 @@ The stable units are:
 - provider-neutral prompt execution
 - skill and role bridges generated from canonical sources
 - hook adapters that call one shared bridge sync script
+- commit boundaries that protect unrelated dirty worktree changes
 
 ## Non-goals
 
@@ -62,6 +65,8 @@ The stable units are:
     .agent-harness/
       config.toml
       skills/
+        phaseloop/
+        commit/
       roles/
       prompts/
       providers/
@@ -69,10 +74,14 @@ The stable units are:
       _utils.py
       gen-bridges.py
       gen-docs-diff.py
+      install-hooks.py
+      sync-bridges.py
+      commit-result.py
       run-phases.py
       run-workflow.py
     templates/
       docs/
+      tasks/
 ```
 
 `core/` is the installable implementation. `installer/` explains how to install it. `spec/` documents the rules the implementation must preserve.

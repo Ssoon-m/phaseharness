@@ -34,16 +34,37 @@ Ask the installed agent to use the skill:
 Use the phaseloop skill to implement <small request> with max attempts 3.
 ```
 
-The skill is a thin entry point. It confirms or uses `max attempts`, then starts
-the headless workflow runner. If you omit `max attempts`, the agent should ask
-once and use the configured default only after you accept it.
+The skill is a thin entry point. It confirms or uses `max attempts` and
+`commit mode`, then starts the headless workflow runner. If you omit either
+value, the agent should ask once and use the default only after you accept it.
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600 --commit-mode none
 ```
 
 Use `--provider claude` to force Claude Code, or omit `--provider` to use the
 configured default provider.
+
+Commit mode defaults to `none`. When the skill starts, it should ask which mode
+to use unless you already specified one:
+
+- `none`: do not commit automatically
+- `final`: create one commit after the whole workflow succeeds
+- `phase`: commit after each completed generate phase
+
+Examples:
+
+```text
+Use the phaseloop skill to implement <small request> with max attempts 3 and commit mode final.
+Use the phaseloop skill to implement <larger request> with max attempts 3 and commit mode phase.
+```
+
+Those map to:
+
+```bash
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 3 --session-timeout-sec 600 --commit-mode final
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <larger request>" --provider codex --max-attempts 3 --session-timeout-sec 600 --commit-mode phase
+```
 
 ## How It Works
 
@@ -82,6 +103,57 @@ and the evaluate session may retry before recording an error in
 `--session-timeout-sec` controls how long one headless agent session or build
 phase call may run before it is treated as failed and retried.
 
+## Committing Results
+
+phaseloop includes a `commit` skill for finished workflow results and normal
+current-session git commits.
+
+Automatic workflow commit behavior is controlled by `--commit-mode`:
+
+- `none` is the default and leaves all changes uncommitted.
+- `final` commits the latest completed task result after evaluation is `pass` or
+  `warn`.
+- `phase` commits completed generate phases as the workflow progresses.
+  Evaluation remains local task state and does not create an empty validation
+  commit.
+
+Product commits do not include `tasks/<task-dir>/artifacts/*` by default. The
+commit subject is selected from the work request or phase metadata, so the git
+history says what work was done without storing phaseloop internals in each
+commit. Installed target repositories also get `tasks/.gitignore`, so runtime
+task directories stay local unless you explicitly choose to commit them.
+
+To commit the latest completed phaseloop task:
+
+```text
+Use the commit skill to commit the latest phaseloop result.
+```
+
+Or run the deterministic script directly:
+
+```bash
+python3 scripts/commit-result.py
+```
+
+To commit a specific task:
+
+```bash
+python3 scripts/commit-result.py <task-dir>
+```
+
+To intentionally include phaseloop task artifacts in a commit:
+
+```bash
+python3 scripts/commit-result.py <task-dir> --include-harness-state
+```
+
+The commit script checks that the task completed, evaluation is `pass` or
+`warn`, `git HEAD` did not move during the workflow, and paths that were dirty
+before the workflow started are not being mixed into the commit. If the workflow
+started from a dirty worktree, automatic commit will usually stop and ask for a
+manual decision. For best results, start commit-mode workflows from a clean
+worktree and avoid editing the same repository while they run.
+
 ## Generated State
 
 An executed task produces files like:
@@ -103,12 +175,17 @@ tasks/<task-dir>/
   evaluate-output-attempt1.json
 ```
 
+Runtime task state under `tasks/` is gitignored by default in installed target
+repositories. It is durable local state for the agent workflow, not product
+history.
+
 The canonical harness lives under `.agent-harness/`. Runtime-specific files are
 generated bridges:
 
 ```text
 .agent-harness/
   skills/phaseloop/
+  skills/commit/
   roles/phase-*/
 
 .claude/skills

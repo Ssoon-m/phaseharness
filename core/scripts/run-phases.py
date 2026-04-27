@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -11,6 +12,22 @@ from _utils import find_project_root, git_head, load_config, load_json, load_pro
 
 def log(message: str) -> None:
     print(f"[phaseloop] {message}", flush=True)
+
+
+def commit_phase_result(root: Path, task_dir_name: str, phase_num: int, commit_mode: str) -> int:
+    if commit_mode != "phase":
+        return 0
+    cmd = [
+        sys.executable,
+        str(root / "scripts" / "commit-result.py"),
+        task_dir_name,
+        "--phase",
+        str(phase_num),
+        "--allow-head-move",
+    ]
+    log(f"commit-mode=phase command={' '.join(cmd)}")
+    result = subprocess.run(cmd, cwd=str(root), text=True)
+    return result.returncode
 
 
 def find_next_phase(index: dict[str, Any]) -> dict[str, Any] | None:
@@ -285,6 +302,7 @@ def run_phases(
     max_attempts_override: int | None = None,
     skip_evaluation: bool = False,
     session_timeout_sec: int | None = None,
+    commit_mode: str = "none",
 ) -> int:
     root = find_project_root()
     config = load_config(root)
@@ -365,6 +383,11 @@ def run_phases(
             save_json(index_path, fresh_index)
             if phase_num == 0:
                 run_docs_diff(root, task_dir, baseline)
+            commit_code = commit_phase_result(root, task_dir_name, phase_num, commit_mode)
+            if commit_code != 0:
+                update_top_index(root, task_dir_name, "error")
+                log(f"phase {phase_num} commit failed")
+                return commit_code
             log(f"phase {phase_num} completed")
             continue
 
@@ -403,10 +426,11 @@ def main() -> int:
     parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per phase and evaluation")
     parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
     parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
+    parser.add_argument("--commit-mode", choices=["none", "phase"], default="none", help="Commit mode for completed implementation phases")
     parser.add_argument("--skip-evaluation", action="store_true", help="Do not run the final evaluation step")
     args = parser.parse_args()
     session_timeout_sec = args.session_timeout_sec or args.phase_timeout_sec
-    return run_phases(args.task_dir, args.provider, args.max_attempts, args.skip_evaluation, session_timeout_sec)
+    return run_phases(args.task_dir, args.provider, args.max_attempts, args.skip_evaluation, session_timeout_sec, args.commit_mode)
 
 
 if __name__ == "__main__":

@@ -28,13 +28,33 @@ installer는 `https://github.com/Ssoon-m/phaseloop.git`을 clone한 뒤 canonica
 Use the phaseloop skill to implement <작은 요구사항> with max attempts 3.
 ```
 
-`phaseloop` skill은 얇은 진입점입니다. `max attempts`를 확인하거나 사용자가 지정한 값을 사용한 뒤, 내부적으로 headless workflow runner를 실행합니다. `max attempts`를 생략하면 에이전트가 한 번 물어보고, 사용자가 기본값을 승인한 뒤에만 시작해야 합니다.
+`phaseloop` skill은 얇은 진입점입니다. `max attempts`와 `commit mode`를 확인하거나 사용자가 지정한 값을 사용한 뒤, 내부적으로 headless workflow runner를 실행합니다. 둘 중 하나를 생략하면 에이전트가 한 번 물어보고, 사용자가 기본값을 승인한 뒤에만 시작해야 합니다.
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600 --commit-mode none
 ```
 
 Claude Code로 강제 실행하려면 `--provider claude`를 사용하세요. `--provider`를 생략하면 설정된 기본 provider를 사용합니다.
+
+`commit mode`의 기본값은 `none`입니다. 사용자가 미리 지정하지 않았다면 skill 시작 시 어떤 모드로 실행할지 물어봐야 합니다.
+
+- `none`: 자동 커밋하지 않음
+- `final`: 전체 workflow가 성공한 뒤 커밋 1개 생성
+- `phase`: generate phase가 완료될 때마다 커밋 생성
+
+예시:
+
+```text
+Use the phaseloop skill to implement <작은 요구사항> with max attempts 3 and commit mode final.
+Use the phaseloop skill to implement <큰 요구사항> with max attempts 3 and commit mode phase.
+```
+
+내부적으로는 아래 옵션을 붙이는 흐름입니다.
+
+```bash
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 3 --session-timeout-sec 600 --commit-mode final
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <larger request>" --provider codex --max-attempts 3 --session-timeout-sec 600 --commit-mode phase
+```
 
 ## 동작 방식
 
@@ -66,6 +86,44 @@ evaluate session: independent verification
 
 `--session-timeout-sec`는 headless 에이전트 세션 또는 build phase 호출 하나가 몇 초까지 실행될 수 있는지를 정합니다. 시간이 넘으면 실패로 기록하고 재시도합니다.
 
+## 결과 커밋
+
+phaseloop에는 완료된 workflow 결과와 현재 세션 변경을 안전하게 커밋하기 위한 `commit` skill이 포함됩니다.
+
+자동 workflow 커밋은 `--commit-mode`로 제어합니다.
+
+- `none`은 기본값이며 변경 사항을 자동 커밋하지 않습니다.
+- `final`은 evaluation이 `pass` 또는 `warn`일 때 완료된 task 결과를 커밋합니다.
+- `phase`는 workflow 진행 중 완료된 generate phase를 커밋합니다. evaluation은 로컬 task state로만 남기며 빈 validation 커밋은 만들지 않습니다.
+
+기본 product commit에는 `tasks/<task-dir>/artifacts/*`가 들어가지 않습니다. 대신 commit subject는 작업 요청이나 phase metadata에서 가져온 작업 중심 문구를 사용합니다. 즉 git history에는 어떤 작업을 했는지가 남고, phaseloop 내부 경로와 전체 artifact는 로컬 `tasks/` 상태로 유지됩니다. 설치된 타겟 레포에는 `tasks/.gitignore`도 같이 들어가므로 runtime task 디렉토리는 명시적으로 커밋하지 않는 한 로컬 상태로 남습니다.
+
+최신 완료 task를 커밋하려면 이렇게 말하면 됩니다.
+
+```text
+Use the commit skill to commit the latest phaseloop result.
+```
+
+스크립트를 직접 실행할 수도 있습니다.
+
+```bash
+python3 scripts/commit-result.py
+```
+
+특정 task만 지정하려면:
+
+```bash
+python3 scripts/commit-result.py <task-dir>
+```
+
+phaseloop task artifact까지 의도적으로 커밋하고 싶을 때만:
+
+```bash
+python3 scripts/commit-result.py <task-dir> --include-harness-state
+```
+
+`commit-result.py`는 task가 완료됐는지, evaluation이 `pass` 또는 `warn`인지, workflow 도중 `git HEAD`가 바뀌지 않았는지, workflow 시작 전에 이미 dirty였던 파일이 섞이지 않는지를 확인합니다. dirty worktree에서 workflow를 시작했다면 자동 커밋은 보통 멈추고 수동 판단을 요구합니다. 가장 안전한 방식은 clean worktree에서 commit mode workflow를 시작하고, 실행 중 같은 레포를 따로 수정하지 않는 것입니다.
+
 ## 생성되는 상태
 
 작업을 실행하면 대략 아래와 같은 파일이 생성됩니다.
@@ -87,11 +145,14 @@ tasks/<task-dir>/
   evaluate-output-attempt1.json
 ```
 
+설치된 타겟 레포에서 `tasks/` 아래 runtime task 상태는 기본적으로 gitignore됩니다. 이 파일들은 agent workflow를 위한 로컬 durable state이며, product history가 아닙니다.
+
 canonical harness는 `.agent-harness/` 아래에 있습니다. 런타임별 파일은 generated bridge입니다.
 
 ```text
 .agent-harness/
   skills/phaseloop/
+  skills/commit/
   roles/phase-*/
 
 .claude/skills

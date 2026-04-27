@@ -39,6 +39,7 @@ Create or update:
       "phase": 0,
       "name": "docs",
       "status": "pending",
+      "commit_message": "docs: update project documentation",
       "max_attempts": 2
     }
   ]
@@ -52,6 +53,8 @@ Each `phase<N>.md` must be self-contained and include:
 - files in scope
 - acceptance criteria with runnable commands where possible
 - status update instruction for `tasks/<task-dir>/index.json`
+- a concise `commit_message` in `index.json` for this phase when commit mode is
+  `phase`
 
 ## Rules
 
@@ -59,5 +62,7 @@ Each `phase<N>.md` must be self-contained and include:
 - Phase 0 should update docs when docs need to reflect the work.
 - Keep phases small enough for isolated execution.
 - Dependencies and done conditions must be explicit.
+- Commit messages must describe the work itself. Do not mention phase numbers or
+  phaseloop internal paths.
 - Preserve existing workflow metadata in `index.json` if the orchestrator already
   created it.
