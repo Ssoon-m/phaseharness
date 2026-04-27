@@ -2,134 +2,66 @@
 
 Portable five-phase agent workflow for Claude Code and Codex.
 
-phaseloop installs a provider-neutral harness into a target repository. It turns
-one explicit work request into durable artifacts, task phases, implementation,
-and evaluation without relying on a single conversation's memory. The current
-conversation stays small while fresh headless agent sessions do the actual work.
+phaseloop installs a provider-neutral harness into a repository. It turns one
+explicit work request into durable task state, implementation phases, and
+evaluation so the workflow does not depend on one long conversation.
 
 ## Install
 
-Open Claude Code or Codex in the repository where you want phaseloop installed,
-then give the agent this URL:
+Open Claude Code or Codex in the target repository and ask:
 
 ```text
+Install phaseloop from this installer document:
 https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 ```
 
-Tell it:
+The installer copies the canonical harness, generates Claude/Codex bridges,
+creates starter project docs, initializes local task state, and runs smoke
+verification.
+
+Install from the directory that should own the workflow state. In a monorepo,
+that can be the repo root or a specific app/package directory.
+
+## Run A Task
+
+Use the installed skill:
 
 ```text
-Install phaseloop from this installer document.
+Use the phaseloop skill to implement <request> with max attempts 3 and commit mode none.
 ```
 
-The installer clones `https://github.com/Ssoon-m/phaseloop.git`, copies the
-canonical core, generates Claude/Codex bridges, creates starter project docs,
-and runs smoke verification.
+`max attempts` controls the retry budget for each workflow session or build
+phase. `commit mode` controls whether phaseloop creates git commits.
+If either value is omitted, the skill asks once before using a default.
 
-## Start A Task
-
-Ask the installed agent to use the skill:
-
-```text
-Use the phaseloop skill to implement <small request> with max attempts 3.
-```
-
-The skill is a thin entry point. It confirms or uses `max attempts` and
-`commit mode`, then starts the headless workflow runner. If you omit either
-value, the agent should ask once and use the default only after you accept it.
+You can also run the workflow directly:
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600 --commit-mode none
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <request>" \
+  --max-attempts 3 \
+  --session-timeout-sec 600 \
+  --commit-mode none
 ```
 
-Use `--provider claude` to force Claude Code, or omit `--provider` to use the
-configured default provider.
+`--provider claude` or `--provider codex` overrides the configured headless
+runtime. This may differ from the agent session that started phaseloop.
 
-Commit mode defaults to `none`. When the skill starts, it should ask which mode
-to use unless you already specified one:
+## Commit Modes
 
-- `none`: do not commit automatically
-- `final`: create one commit after the whole workflow succeeds
-- `phase`: commit after each completed generate phase
+phaseloop defaults to `none`.
 
-Examples:
+- `none`: leave changes uncommitted.
+- `final`: create one product commit after evaluation passes or warns.
+- `phase`: commit after each completed generate phase. Evaluation stays local
+  and does not create an empty validation commit.
 
-```text
-Use the phaseloop skill to implement <small request> with max attempts 3 and commit mode final.
-Use the phaseloop skill to implement <larger request> with max attempts 3 and commit mode phase.
-```
+Product commits exclude phaseloop task artifacts by default. Runtime task state
+under `tasks/` stays local unless you explicitly choose to include it.
 
-Those map to:
+The commit script checks task completion, evaluation status, HEAD movement, and
+pre-existing dirty paths before creating a commit.
 
-```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 3 --session-timeout-sec 600 --commit-mode final
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <larger request>" --provider codex --max-attempts 3 --session-timeout-sec 600 --commit-mode phase
-```
-
-## How It Works
-
-phaseloop runs one request through five phases:
-
-```text
-clarify -> context gather -> plan -> generate -> evaluate
-```
-
-- `clarify`: understand the request, done conditions, assumptions, and non-goals
-- `context gather`: find the relevant docs, code, patterns, and constraints
-- `plan`: create task state and implementation phase files
-- `generate`: execute the planned phases
-- `evaluate`: verify the result against done conditions and acceptance criteria
-
-Each phase writes an artifact under `tasks/<task-dir>/artifacts/`. The next
-phase reads those files from disk, so progress survives context loss and runtime
-switches.
-
-The default agent-session strategy is balanced:
-
-```text
-analysis session: clarify + context gather + plan
-build session(s): planned implementation phases
-evaluate session: independent verification
-```
-
-This avoids one large conversation containing the whole job, but it also avoids
-starting a fresh agent session for every small logical phase and repeatedly
-loading the same startup context.
-
-`--max-attempts` controls how many times the analysis session, each build phase,
-and the evaluate session may retry before recording an error in
-`tasks/<task-dir>/index.json`. It is a retry budget, not an infinite loop count.
-
-`--session-timeout-sec` controls how long one headless agent session or build
-phase call may run before it is treated as failed and retried.
-
-## Committing Results
-
-phaseloop includes a `commit` skill for finished workflow results and normal
-current-session git commits.
-
-Automatic workflow commit behavior is controlled by `--commit-mode`:
-
-- `none` is the default and leaves all changes uncommitted.
-- `final` commits the latest completed task result after evaluation is `pass` or
-  `warn`.
-- `phase` commits completed generate phases as the workflow progresses.
-  Evaluation remains local task state and does not create an empty validation
-  commit.
-
-Product commits do not include `tasks/<task-dir>/artifacts/*` by default. The
-commit subject is selected from the work request or phase metadata, so the git
-history says what work was done without storing phaseloop internals in each
-commit. Installed target repositories also get `tasks/.gitignore`, so runtime
-task directories stay local unless you explicitly choose to commit them.
-
-To commit the latest completed phaseloop task:
-
-```text
-Use the commit skill to commit the latest phaseloop result.
-```
-
-Or run the deterministic script directly:
+To commit the latest completed phaseloop result manually:
 
 ```bash
 python3 scripts/commit-result.py
@@ -141,110 +73,51 @@ To commit a specific task:
 python3 scripts/commit-result.py <task-dir>
 ```
 
-To intentionally include phaseloop task artifacts in a commit:
+To intentionally include phaseloop state:
 
 ```bash
 python3 scripts/commit-result.py <task-dir> --include-harness-state
 ```
 
-The commit script checks that the task completed, evaluation is `pass` or
-`warn`, `git HEAD` did not move during the workflow, and paths that were dirty
-before the workflow started are not being mixed into the commit. If the workflow
-started from a dirty worktree, automatic commit will usually stop and ask for a
-manual decision. For best results, start commit-mode workflows from a clean
-worktree and avoid editing the same repository while they run.
+## How It Works
 
-## Generated State
-
-An executed task produces files like:
+phaseloop runs one request through five logical phases:
 
 ```text
-tasks/<task-dir>/
-  index.json
-  artifacts/
-    01-clarify.md
-    02-context.md
-    03-plan.md
-    04-generate.md
-    05-evaluate.md
-  phase0.md
-  phase1.md
-  analysis-output-attempt1.json
-  phase0-output.json
-  generate-output.json
-  evaluate-output-attempt1.json
+clarify -> context gather -> plan -> generate -> evaluate
 ```
 
-Runtime task state under `tasks/` is gitignored by default in installed target
-repositories. It is durable local state for the agent workflow, not product
-history.
-
-The canonical harness lives under `.agent-harness/`. Runtime-specific files are
-generated bridges:
+By default, phaseloop groups the first three analysis phases into one session,
+then runs implementation and evaluation in separate sessions:
 
 ```text
-.agent-harness/
-  skills/phaseloop/
-  skills/commit/
-  roles/phase-*/
-
-.claude/skills
-.claude/agents/phase-*.md
-.claude/hooks/phaseloop-sync-bridges.sh
-.agents/skills
-.codex/agents/phase-*.toml
-.codex/hooks/phaseloop-sync-bridges.sh
+analysis: clarify + context gather + plan
+build: planned implementation phases
+evaluate: independent verification
 ```
 
-Edit canonical files under `.agent-harness/`, not generated bridge files.
-Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
-Existing Claude/Codex hooks are preserved; phaseloop only adds or updates its
-own hook entries.
+This keeps the current conversation small, avoids restarting a provider session
+for every small logical phase, and keeps final evaluation separate from the
+implementation session. This is the default `balanced` strategy.
 
-## Monorepos
+## Where State Lives
 
-Install phaseloop from the directory that should own the workflow state.
+Task state is stored under `tasks/` and is gitignored by default in installed
+repositories.
 
-- Repo-wide workflow: install from the monorepo root.
-- App-specific workflow: install from `apps/<app>` or the target package.
+Canonical harness files live under `.agent-harness/`. Claude and Codex runtime
+bridges are generated from that canonical source.
 
-Root and app-level installs can coexist, but they are separate scopes with
-separate `tasks/` state.
+Edit `.agent-harness/` when changing the harness. Generated bridge files under
+`.claude/`, `.agents/`, and `.codex/` should be treated as runtime output.
 
-## Repository Layout
+## Development
 
-```text
-.
-├── SPEC.md
-├── spec/
-│   ├── PURPOSE.md
-│   ├── CONTRACT.md
-│   ├── PROVIDERS.md
-│   └── BRIDGES.md
-├── installer/
-│   └── install-harness.md
-├── core/
-│   ├── .agent-harness/
-│   ├── scripts/
-│   └── templates/
-└── tests/
-    └── smoke_install.py
-```
-
-## Local Development
-
-Run the local smoke test:
+Run local verification:
 
 ```bash
 python3 tests/smoke_install.py
 python3 -m py_compile core/scripts/*.py core/.agent-harness/providers/*.py tests/smoke_install.py
 ```
 
-To test installation from a local checkout, set:
-
-```bash
-export HARNESS_SOURCE=/absolute/path/to/phaseloop
-```
-
-Then give `installer/install-harness.md` to an agent session in a temporary
-target repository.
+For implementation details, see `SPEC.md` and `spec/`.
