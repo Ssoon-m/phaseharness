@@ -57,12 +57,7 @@ def build_phase_commit_prompt(root: Path, task_dir: Path, phase: dict[str, Any])
     headless_commit = (root / ".agent-harness" / "skills" / "commit" / "references" / "headless.md").read_text()
     message_guidance = (root / ".agent-harness" / "skills" / "commit" / "references" / "message-guidance.md").read_text()
     commit_message = str(phase.get("commit_message") or "").strip()
-    return f"""You are running the phaseloop phase commit step in headless mode.
-
-Use the repository commit skill rules to create a git commit for only this
-completed implementation phase. Do not call `scripts/commit-result.py` for this
-phase-local commit; inspect the worktree and stage only files that belong to the
-phase below.
+    return f"""Run the phaseloop phase-local commit step.
 
 ## Commit Skill
 
@@ -76,21 +71,11 @@ phase below.
 
 {message_guidance}
 
-## Phase Commit Contract
+## Invocation
 
-- Commit only changes that belong to phase {phase_num}.
-- Prefer this commit message exactly when it fits the actual change:
-  `{commit_message or "no phase commit_message was provided"}`
-- Do not commit `tasks/` runtime state unless the phase file explicitly asks for
-  phaseloop state to be product history.
-- A path that was dirty before the workflow started may still be committed when
-  this phase clearly owns that path. Do not commit unrelated pre-existing local
-  changes.
-- Do not run `git add .` or repository-root `git add -A`.
-- If ownership is unclear, do not commit and explain why.
-- If there are no phase-local product changes to commit, exit successfully
-  without creating an empty commit.
-- Do not push.
+- Phase: {phase_num}
+- Preferred commit message: `{commit_message or "no phase commit_message was provided"}`
+- Task directory: `{task_dir.relative_to(root)}`
 
 ## Task Index
 
@@ -240,19 +225,20 @@ def build_phase_prompt(root: Path, task_dir: Path, phase: dict[str, Any], attemp
         if content:
             artifacts.append(f"## {task_dir.relative_to(root)}/{rel}\n\n{content}")
     artifacts_text = "\n\n".join(artifacts) if artifacts else "No prior artifacts found."
-    return f"""You are executing one harness phase in an independent session.
+    return f"""Run the phaseloop build session for one planned generate phase.
+
+Workflow invariant: `clarify -> context -> plan -> generate -> evaluate` is fixed.
+`run-phases` performs the build session (`generate`) from existing task artifacts
+and phase files; do not restart clarify, context, or planning.
 
 {generate_role}
 
-Headless mode:
-- If AGENT_HEADLESS=1, do not ask questions.
-- Run the acceptance criteria commands yourself when possible.
-- Update `{task_dir.relative_to(root)}/index.json` with the final phase status.
-- Use `context_insufficient`, `validation_failed`, `sandbox_blocked`, or `runtime_error` in `error_message` when failing.
+## Invocation
 
-Attempt:
-- This is attempt {attempt} of {max_attempts}.
-- If this attempt cannot complete after reasonable local fixes, record `error`.
+- Task directory: `{task_dir.relative_to(root)}`
+- Phase: {phase_num}
+- Attempt: {attempt} of {max_attempts}
+- Runtime: headless; do not ask questions.
 
 ## Task Index
 
@@ -263,8 +249,6 @@ Attempt:
 ## Prior Artifacts
 
 {artifacts_text}
-
-Read project docs from `docs/` when they are relevant to this phase.
 
 ## Phase Content
 
@@ -409,11 +393,11 @@ def run_phases(
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Run pending phases for a harness task.")
+    parser = argparse.ArgumentParser(description="Run the fixed workflow build session from planned phase files.")
     parser.add_argument("task_dir", help="Task directory name under tasks/")
     parser.add_argument("--provider", default=None, help="Provider name override")
     parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per phase")
-    parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
+    parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each workflow session or build phase call")
     parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--commit-mode", choices=["none", "phase"], default="none", help="Commit mode for completed implementation phases")
     args = parser.parse_args()

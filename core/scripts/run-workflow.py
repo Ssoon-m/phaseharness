@@ -258,51 +258,45 @@ def set_evaluation_status(task_dir: Path, **fields: Any) -> None:
 def evaluate_prompt(root: Path, task_dir: Path, attempt: int, max_attempts: int) -> str:
     task_index = (task_dir / "index.json").read_text()
     task_rel = task_dir.relative_to(root)
-    return f"""You are executing the final phaseloop evaluation phase.
+    return f"""Run the phaseloop evaluate session.
+
+Workflow invariant: `clarify -> context -> plan -> generate -> evaluate` is fixed.
+After main-session clarify, `run-workflow` splits work into three workflow sessions:
+analysis (`context`, `plan`), build (`generate`), and evaluate (`evaluate`).
+This session consumes existing task artifacts and phase files.
 
 {role_prompt(root, "phase-evaluate")}
 
-Headless mode:
-- If AGENT_HEADLESS=1, do not ask questions.
-- Verify the generated work against the clarify contract and phase acceptance criteria.
-- Write `{task_rel}/artifacts/05-evaluate.md`.
-- Update `{task_rel}/index.json` evaluation status to `pass`, `warn`, or `fail`.
+## Invocation
 
-Attempt:
-- This is evaluation attempt {attempt} of {max_attempts}.
+- Task directory: `{task_rel}`
+- Attempt: {attempt} of {max_attempts}
+- Runtime: headless; do not ask questions.
+- Input files:
+  - `{task_rel}/artifacts/01-clarify.md`
+  - `{task_rel}/artifacts/02-context.md`
+  - `{task_rel}/artifacts/03-plan.md`
+  - `{task_rel}/artifacts/04-generate.md`
+  - `{task_rel}/phase<N>.md`
 
 ## Task Index
 
 ```json
 {task_index}
 ```
-
-## Task Files
-
-- `{task_rel}/artifacts/01-clarify.md`
-- `{task_rel}/artifacts/02-context.md`
-- `{task_rel}/artifacts/03-plan.md`
-- `{task_rel}/artifacts/04-generate.md`
-- `{task_rel}/phase<N>.md`
-
-Read task files and project docs from `docs/` when they are relevant to evaluation.
 """
 
 
 def analysis_prompt(root: Path, task_dir: Path, request: str, attempt: int, max_attempts: int) -> str:
     task_index = (task_dir / "index.json").read_text()
     task_contract = (root / ".agent-harness" / "prompts" / "task-create.md").read_text()
-    return f"""You are running the phaseloop analysis session.
+    task_rel = task_dir.relative_to(root)
+    return f"""Run the phaseloop analysis session.
 
-Clarify has already run in the main conversation. This headless session owns
-the remaining analysis phases:
-
-1. context gather
-2. plan
-
-Do not implement code. The goal is to produce durable artifacts and executable
-phase files so a later build session can work from file state instead of this
-conversation's memory.
+Workflow invariant: `clarify -> context -> plan -> generate -> evaluate` is fixed.
+After main-session clarify, `run-workflow` splits work into three workflow sessions:
+analysis (`context`, `plan`), build (`generate`), and evaluate (`evaluate`).
+This session owns only `context` and `plan`; keep discovery bounded to the clarify contract.
 
 ## Context Gather Role
 
@@ -316,26 +310,15 @@ conversation's memory.
 
 {task_contract}
 
-## Headless Mode
+## Invocation
 
-- If AGENT_HEADLESS=1, do not ask questions.
-- Use the existing clarify artifact as the request contract.
-- If the clarify artifact is still insufficient, record assumptions and
-  deferred scope instead of stopping for clarification.
-- Write all required files before returning.
-- Preserve workflow and session metadata already present in `{task_dir.relative_to(root)}/index.json`.
+- Task directory: `{task_rel}`
+- Attempt: {attempt} of {max_attempts}
+- Runtime: headless; do not ask questions. Record assumptions or missing context in artifacts.
+- Clarify artifact: `{task_rel}/artifacts/01-clarify.md`
+- Required outputs: `artifacts/02-context.md`, `artifacts/03-plan.md`, `phase<N>.md`, and updated `index.json`
 
-Attempt:
-- This is analysis attempt {attempt} of {max_attempts}.
-
-## Required Files
-
-- `{task_dir.relative_to(root)}/artifacts/02-context.md`
-- `{task_dir.relative_to(root)}/artifacts/03-plan.md`
-- `{task_dir.relative_to(root)}/index.json`
-- `{task_dir.relative_to(root)}/phase<N>.md` files for the build session
-
-## Main-Session Clarify Artifact
+## Clarify Artifact
 
 {read_artifact_if_exists(task_dir, "artifacts/01-clarify.md") or "Missing clarify artifact."}
 
@@ -348,8 +331,6 @@ Attempt:
 ```json
 {task_index}
 ```
-
-Read project docs from `docs/` when they are relevant to context or planning.
 """
 
 
@@ -762,14 +743,14 @@ def run_workflow(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run a five-phase artifact workflow using main-session clarify plus balanced headless sessions."
+        description="Run the fixed clarify -> context -> plan -> generate -> evaluate workflow using main-session clarify plus three workflow sessions."
     )
     parser.add_argument("request", nargs="*", help="Work request to execute")
     parser.add_argument("--request-file", default=None, help="Read the work request from a file")
     parser.add_argument("--provider", default=None, help="Provider name override")
     parser.add_argument("--task-name", default=None, help="Task name override")
     parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts for context/plan analysis, build phases, and evaluate")
-    parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
+    parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each workflow session or build phase call")
     parser.add_argument("--clarify-file", default=None, help="Path to the main-session clarify artifact markdown file")
     parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--commit-mode", choices=["none", "final", "phase"], default=None, help="Commit mode: none, final, or phase")
@@ -804,7 +785,7 @@ def main() -> int:
     if not request:
         parser.error("request text or --request-file is required")
     if not args.clarify_file:
-        parser.error("--clarify-file is required because clarify runs in the main session before headless workflow")
+        parser.error("--clarify-file is required because clarify runs in the main session before workflow sessions")
     clarify_file = resolve_input_path(root, args.clarify_file) if args.clarify_file else None
     return run_workflow(
         request,

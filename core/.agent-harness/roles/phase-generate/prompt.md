@@ -38,3 +38,5 @@ completed | error
 - Do not leave placeholders unless the phase explicitly requires them.
 - If validation fails after reasonable fixes, mark the phase `error` with an
   `error_message`.
+- Use `context_insufficient`, `validation_failed`, `sandbox_blocked`, or
+  `runtime_error` in `error_message` when failing.

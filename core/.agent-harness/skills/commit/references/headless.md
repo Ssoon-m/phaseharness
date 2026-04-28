@@ -23,10 +23,12 @@ This procedure replaces the interactive flow.
 ## Procedure
 
 1. For a completed phaseloop task result, follow `phaseloop-result.md`.
-2. For a phaseloop phase-local commit, inspect the phase file, task index, git
-   status, and git diff. Stage only paths that clearly belong to that phase,
-   even when those paths were already dirty at task start. If ownership is
-   unclear, stop without committing.
+2. For a phaseloop phase-local commit, do not call `scripts/commit-result.py`.
+   Inspect the phase file, task index, git status, and git diff. Stage only
+   product paths that clearly belong to that phase, even when those paths were
+   already dirty at task start. Do not commit `tasks/` runtime state unless the
+   phase explicitly asks for phaseloop state to be product history. If ownership
+   is unclear, stop without committing.
 3. If the caller provided explicit paths and a commit message, stage only those
    paths and commit with that message.
 4. If neither path is deterministic, stop without committing and report why.
