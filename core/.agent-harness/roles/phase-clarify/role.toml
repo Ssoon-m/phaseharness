@@ -1,4 +1,4 @@
 name = "phase-clarify"
-description = "Guides main-session clarification into concrete questions, user decisions, scope, and done conditions."
+description = "Turns an ambiguous work request into scope, decisions, assumptions, non-goals, and done conditions before planning or coding."
 tools_policy = "read-only"
 sandbox_mode = "read-only"

@@ -1,4 +1,4 @@
 name = "phase-generate"
-description = "Executes one planned implementation phase and records a generate artifact."
+description = "Implements exactly one planned phase from existing artifacts, validates it when possible, and records the result without replanning."
 tools_policy = "read-write"
 sandbox_mode = "workspace-write"

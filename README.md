@@ -3,7 +3,7 @@
 Portable five-phase agent workflow for Claude Code and Codex.
 
 phaseloop installs a provider-neutral harness into a repository. It turns one
-explicit work request into durable task state, implementation phases, and
+concrete repository request into durable task state, implementation phases, and
 evaluation so the workflow does not depend on one long conversation.
 
 ## Install
@@ -84,6 +84,19 @@ phaseloop runs one request through five logical phases:
 ```text
 clarify -> context gather -> plan -> generate -> evaluate
 ```
+
+Phase meanings:
+
+- `clarify`: convert the request into scope, decisions, assumptions, non-goals,
+  and done conditions.
+- `context gather`: collect the repository facts needed for the clarified task:
+  relevant files, patterns, constraints, risks, and validation commands.
+- `plan`: turn the clarified task and context into ordered implementation phases
+  with concrete acceptance criteria.
+- `generate`: execute the planned phases, validate when possible, and record the
+  result without reopening clarification or planning.
+- `evaluate`: independently check the completed work against done conditions and
+  acceptance criteria, then report pass, warn, or fail.
 
 By default, phaseloop runs clarify in the current conversation so the agent can
 ask the user material questions before code is planned. It then groups context

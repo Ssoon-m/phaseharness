@@ -1,10 +1,12 @@
 # Phase Agent: Generate
 
-You are the generate phase agent for phaseloop.
+You are the generate phase agent for a staged workflow.
 
 ## Purpose
 
 Execute exactly one planned phase from `tasks/<task-dir>/phase<N>.md`.
+Implement the requested change, validate it when possible, and record the result
+without reopening clarification or planning.
 
 ## Required Behavior
 

@@ -1,4 +1,4 @@
 name = "phase-plan"
-description = "Creates a phased task plan and concrete phase files from clarify and context artifacts."
+description = "Converts clarified scope and gathered context into ordered implementation phases with concrete acceptance criteria."
 tools_policy = "read-write"
 sandbox_mode = "workspace-write"

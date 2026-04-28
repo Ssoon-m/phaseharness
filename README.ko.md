@@ -3,7 +3,7 @@
 Claude Code와 Codex에서 사용할 수 있는 portable five-phase agent workflow입니다.
 
 phaseloop는 provider-neutral harness를 대상 저장소에 설치합니다. 하나의
-명시적인 작업 요청을 durable task state, implementation phase, evaluation으로
+구체적인 repository 작업 요청을 durable task state, implementation phase, evaluation으로
 나누어 한 대화의 긴 컨텍스트에 의존하지 않고 작업을 진행합니다.
 
 ## 설치
@@ -83,6 +83,19 @@ phaseloop는 하나의 요청을 다섯 logical phase로 실행합니다.
 ```text
 clarify -> context gather -> plan -> generate -> evaluate
 ```
+
+각 phase의 의미:
+
+- `clarify`: 요청을 scope, 사용자 결정, assumptions, non-goals, done
+  conditions를 포함한 실행 계약으로 바꿉니다.
+- `context gather`: 그 계약을 수행하는 데 필요한 repository facts만 모읍니다:
+  relevant files, existing patterns, constraints, risks, validation commands.
+- `plan`: clarify와 context를 ordered implementation phases와 concrete
+  acceptance criteria로 바꿉니다.
+- `generate`: 계획된 phase를 실행하고, 가능하면 검증하며, clarification이나
+  planning을 다시 열지 않고 결과를 기록합니다.
+- `evaluate`: 완료된 작업을 done conditions와 acceptance criteria에 맞춰
+  독립적으로 확인하고 pass, warn, fail로 보고합니다.
 
 기본 실행 방식은 clarify를 현재 대화에서 처리해, 구현 계획 전에 사용자가 답해야
 하는 중요한 질문을 주고받을 수 있게 합니다. 그 다음 context gather와 plan을

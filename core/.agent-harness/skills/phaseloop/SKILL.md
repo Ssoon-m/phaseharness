@@ -1,12 +1,24 @@
 ---
 name: phaseloop
-description: Run an explicit work request through the phaseloop artifact workflow.
+description: Run a staged workflow that clarifies, contextualizes, plans, implements, and evaluates a concrete repository task.
 ---
 
 # Phaseloop
 
-Use this skill when the user asks to implement a concrete request through the
-phaseloop harness.
+Use this skill when the user asks to clarify, scope, plan, implement, or
+evaluate a concrete repository task through a staged workflow. The user does
+not need to mention phaseloop by name.
+
+Common triggers:
+
+- Clarify an ambiguous implementation request before coding.
+- Turn a request into scope, assumptions, non-goals, and done conditions.
+- Gather repository context before planning or implementation.
+- Plan and implement a concrete repository change in phases.
+- Independently evaluate completed work against acceptance criteria.
+
+Do not use this skill for a short answer, pure explanation, code review, or
+one-off terminal command unless the user asks for a staged workflow.
 
 ## Default Behavior
 
@@ -92,11 +104,17 @@ Commit message rules:
 
 Logical phases:
 
-1. `clarify`: understand the request, done conditions, assumptions, and non-goals.
-2. `context gather`: find relevant docs, code, patterns, and constraints.
-3. `plan`: create task state and implementation phase files.
-4. `generate`: execute the planned phases.
-5. `evaluate`: verify the result against done conditions and acceptance criteria.
+1. `clarify`: convert the request into an execution contract: scope, user
+   decisions, assumptions, non-goals, and done conditions.
+2. `context gather`: collect only the repository facts needed to act on that
+   contract: relevant files, patterns, constraints, risks, and validation
+   commands.
+3. `plan`: turn the contract and context into ordered implementation phases
+   with concrete acceptance criteria.
+4. `generate`: execute the planned phases, validate when possible, and record
+   results without reopening clarification or planning.
+5. `evaluate`: independently check the completed work against done conditions
+   and acceptance criteria, then report pass, warn, or fail.
 
 Provider session boundaries:
 
