@@ -204,6 +204,8 @@ commit mode:
 - `phase`: 완료된 generate phase마다 commit을 만든다. evaluation은 local task state로만 남기며 빈 validation commit을 만들지 않는다.
 
 자동 product commit은 기본적으로 `tasks/<task-dir>/artifacts/*` 같은 phaseloop state 파일을 포함하지 않는다. commit subject는 작업 요청 또는 phase metadata의 `commit_message`를 사용한다. 설치된 타겟 레포는 `tasks/.gitignore`로 runtime task state를 기본 ignore한다. phaseloop state 파일을 commit해야 할 때는 사용자가 명시적으로 `--include-harness-state`를 선택해야 한다.
+커밋할 product change가 없으면 commit 단계는 빈 커밋을 만들지 않고 성공으로
+끝난다.
 
 commit 단계는 아래 조건을 만족해야 한다.
 

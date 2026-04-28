@@ -76,7 +76,9 @@ context. Evaluation remains local task state and does not create an empty
 validation commit. Product commits exclude phaseloop artifacts by default;
 commit subjects come from the work request or phase metadata. Phase commits
 should include only paths clearly owned by that phase, even if the repository
-started dirty; unrelated staged changes still fail closed.
+started dirty; unrelated staged changes still fail closed. If a phase has no
+product changes to commit, phaseloop treats the commit step as successful and
+does not create an empty commit.
 
 Commit message rules:
 

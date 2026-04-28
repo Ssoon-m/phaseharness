@@ -53,6 +53,8 @@ phaseloop defaults to `none`.
 
 Product commits exclude phaseloop task artifacts by default. Runtime task state
 under `tasks/` stays local unless you explicitly choose to include it.
+When there are no product changes to commit, the commit step succeeds without
+creating an empty commit.
 
 The commit script checks task completion, evaluation status, HEAD movement, and
 pre-existing dirty paths before creating a commit.

@@ -8,6 +8,8 @@ This procedure replaces the interactive flow.
 ## Rules
 
 - Prefer no commit over a risky commit.
+- If there are no product changes to commit, report that and exit
+  successfully without creating an empty commit.
 - Commit only paths selected by `scripts/commit-result.py`, paths explicitly
   listed by the caller, or paths that are clearly owned by the provided
   phaseloop phase context.

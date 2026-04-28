@@ -52,6 +52,8 @@ Headless runner를 시작하기 전에 skill은 현재 대화에서 요청을 cl
 Product commit은 기본적으로 phaseloop task artifact를 포함하지 않습니다. 설치된
 저장소에서는 `tasks/` 아래 runtime task state가 기본적으로 로컬 상태로
 유지됩니다.
+커밋할 product change가 없으면 빈 커밋을 만들지 않고 commit step을 성공으로
+처리합니다.
 
 commit script는 task 완료 여부, evaluation 상태, HEAD 이동 여부, workflow 시작 전
 dirty path를 확인한 뒤 commit을 만듭니다.

@@ -227,6 +227,9 @@ Automatic commit assumes no unrelated concurrent edits are made after task
 creation. If that assumption is not true, the user should commit manually with
 explicit staging.
 
+If no product paths are stageable after excluding phaseloop task state and
+baseline-dirty paths, the commit step succeeds without creating an empty commit.
+
 ## Implementation Phases
 
 The plan phase may split generate work into `phase<N>.md` files.

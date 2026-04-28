@@ -53,6 +53,8 @@ phase below.
   changes.
 - Do not run `git add .` or repository-root `git add -A`.
 - If ownership is unclear, do not commit and explain why.
+- If there are no phase-local product changes to commit, exit successfully
+  without creating an empty commit.
 - Do not push.
 
 ## Task Index
@@ -107,7 +109,7 @@ def commit_phase_result(
     after = git_head(root)
     if after == before:
         log(f"phase {phase_num} commit was not created")
-        return 1
+        return 0
     log(f"phase {phase_num} committed {after[:12]}")
     return 0
 
