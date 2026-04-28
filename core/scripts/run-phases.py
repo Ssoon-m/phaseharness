@@ -6,11 +6,46 @@ import subprocess
 from pathlib import Path
 from typing import Any
 
-from _utils import find_project_root, git_head, load_config, load_json, load_provider, now_iso, save_json
+from _utils import find_project_root, git, git_head, load_config, load_json, load_provider, now_iso, save_json
 
 
 def log(message: str) -> None:
     print(f"[phaseloop] {message}", flush=True)
+
+
+def is_harness_state_path(path: str) -> bool:
+    return path == "tasks" or path == "tasks/" or path.startswith("tasks/")
+
+
+def git_status_paths(root: Path) -> set[str]:
+    result = git("status", "--porcelain=v1", "-z", root=root, check=True)
+    paths: set[str] = set()
+    chunks = result.stdout.split("\0")
+    i = 0
+    while i < len(chunks):
+        raw = chunks[i]
+        i += 1
+        if not raw or len(raw) < 4:
+            continue
+        code = raw[:2]
+        paths.add(raw[3:])
+        if "R" in code or "C" in code:
+            if i < len(chunks) and chunks[i]:
+                paths.add(chunks[i])
+                i += 1
+    return paths
+
+
+def pending_product_paths(root: Path, task_dir: Path) -> list[str]:
+    index = load_json(task_dir / "index.json")
+    baseline = index.get("git_baseline", {})
+    dirty_paths = baseline.get("dirty_paths", []) if isinstance(baseline, dict) else []
+    baseline_dirty_paths = set(dirty_paths) if isinstance(dirty_paths, list) else set()
+    return sorted(
+        path
+        for path in git_status_paths(root) - baseline_dirty_paths
+        if not is_harness_state_path(path)
+    )
 
 
 def build_phase_commit_prompt(root: Path, task_dir: Path, phase: dict[str, Any]) -> str:
@@ -85,6 +120,9 @@ def commit_phase_result(
     if commit_mode != "phase":
         return 0
     phase_num = int(phase["phase"])
+    if not pending_product_paths(root, task_dir):
+        log(f"phase {phase_num} has no product file changes to commit")
+        return 0
     before = git_head(root)
     log(f"commit-mode=phase session=commit phase={phase_num} timeout={timeout}s task={task_dir.name}")
     result = provider.run_prompt(
