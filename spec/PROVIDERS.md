@@ -6,13 +6,15 @@ The orchestrators must not know how Claude Code or Codex is invoked. They only c
 
 The default workflow uses balanced session boundaries:
 
-- one analysis provider session for clarify, context gather, and plan
+- main-session clarify before provider sessions start
+- one analysis provider session for context gather and plan
 - one or more build provider sessions for implementation phase files
 - one evaluate provider session for independent verification
 
 Providers may reload runtime startup context for each provider session. The
-balanced strategy avoids doing that for every small logical phase while still
-keeping build and evaluate context separate from analysis.
+balanced strategy avoids doing that for every small logical phase while keeping
+user-facing clarification outside headless execution and keeping build and
+evaluate context separate from analysis.
 
 ## Provider Interface
 
@@ -103,7 +105,7 @@ Codex subagents are explicit. The harness must not assume Codex will automatical
 
 Default workflow and phase execution requires `workspace-write`.
 
-`read-only` is valid for context gathering or read-only roles, but not for generation or validation fixes.
+`read-only` is valid for context gathering or read-only roles, but not for generation or validation fixes. Clarify is handled by the main session before provider execution.
 
 `on-request` is not a headless standard because it depends on approval UI. Headless runs use `never` or a runtime equivalent. If a required action is blocked, the provider records `sandbox_blocked`.
 

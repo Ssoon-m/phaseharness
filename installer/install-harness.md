@@ -235,9 +235,10 @@ command -v claude || true
 command -v codex || true
 ```
 
-The default runtime strategy is balanced: one analysis agent session for
-clarify, context, and plan; build agent session(s) for implementation phases;
-and one evaluate agent session for final verification.
+The default runtime strategy is balanced: clarify runs in the current
+conversation, one analysis agent session handles context and plan, build agent
+session(s) handle implementation phases, and one evaluate agent session handles
+final verification.
 
 ## 10. README Note
 
@@ -253,7 +254,8 @@ This project uses phaseloop. Harness state is stored in `tasks/` and
 task artifacts, canonical configuration lives under `.agent-harness/`, and
 runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
 Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
-phaseloop uses balanced analysis, build, and evaluate agent sessions.
+phaseloop runs clarify in the current conversation, then uses balanced
+analysis, build, and evaluate agent sessions.
 Completed phaseloop results can be committed with the `commit` skill. Automatic
 commit is controlled by commit mode `none`, `final`, or `phase`, with `none` as
 the default. Product commits exclude phaseloop task artifacts by default.

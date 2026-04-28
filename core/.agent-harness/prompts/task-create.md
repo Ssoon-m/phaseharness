@@ -8,11 +8,13 @@ Create:
 
 - `tasks/index.json`
 - `tasks/<task-dir>/index.json`
-- `tasks/<task-dir>/artifacts/01-clarify.md`
 - `tasks/<task-dir>/artifacts/02-context.md`
 - `tasks/<task-dir>/artifacts/03-plan.md`
 - `tasks/<task-dir>/phase0.md`
 - one `tasks/<task-dir>/phase<N>.md` file per implementation phase
+
+Preserve `tasks/<task-dir>/artifacts/01-clarify.md`; it is written by
+main-session clarify before this prompt is used.
 
 ## Task Index Contract
 
@@ -82,6 +84,7 @@ Create `tasks/<task-dir>/index.json`.
 ## Phase Rules
 
 - Phase 0 must update docs when docs need to change.
+- Do not overwrite `artifacts/01-clarify.md`.
 - Phase files must be self-contained enough for an independent session.
 - Phase files must include concrete paths, scope, and acceptance criteria.
 - Acceptance criteria must be runnable commands.

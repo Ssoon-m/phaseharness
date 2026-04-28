@@ -20,7 +20,8 @@ ARTIFACT_AGENT_PHASES = [
     ("evaluate", "phase-evaluate", "artifacts/05-evaluate.md"),
 ]
 
-ANALYSIS_PHASES = ARTIFACT_AGENT_PHASES[:3]
+CLARIFY_PHASE = ARTIFACT_AGENT_PHASES[0]
+ANALYSIS_PHASES = ARTIFACT_AGENT_PHASES[1:3]
 
 WORKFLOW_STATUS_PHASES = [
     ("clarify", "artifacts/01-clarify.md"),
@@ -80,6 +81,11 @@ def read_existing_artifacts(task_dir: Path) -> str:
     return "\n\n".join(parts) if parts else "No prior artifacts found."
 
 
+def read_artifact_if_exists(task_dir: Path, rel: str) -> str:
+    path = task_dir / rel
+    return path.read_text() if path.exists() else ""
+
+
 def workflow_status_template(max_attempts: int) -> list[dict[str, Any]]:
     return [
         {
@@ -96,8 +102,15 @@ def workflow_status_template(max_attempts: int) -> list[dict[str, Any]]:
 def session_status_template(max_attempts: int) -> list[dict[str, Any]]:
     return [
         {
+            "session": "clarify",
+            "phases": ["clarify"],
+            "status": "pending",
+            "attempts": 0,
+            "max_attempts": 1,
+        },
+        {
             "session": "analysis",
-            "phases": ["clarify", "context", "plan"],
+            "phases": ["context", "plan"],
             "status": "pending",
             "attempts": 0,
             "max_attempts": max_attempts,
@@ -303,19 +316,15 @@ def analysis_prompt(root: Path, task_dir: Path, request: str, attempt: int, max_
     task_contract = (root / ".agent-harness" / "prompts" / "task-create.md").read_text()
     return f"""You are running the phaseloop analysis session.
 
-This single headless session owns the first three logical workflow phases:
+Clarify has already run in the main conversation. This headless session owns
+the remaining analysis phases:
 
-1. clarify
-2. context gather
-3. plan
+1. context gather
+2. plan
 
 Do not implement code. The goal is to produce durable artifacts and executable
 phase files so a later build session can work from file state instead of this
 conversation's memory.
-
-## Clarify Role
-
-{role_prompt(root, "phase-clarify")}
 
 ## Context Gather Role
 
@@ -332,7 +341,9 @@ conversation's memory.
 ## Headless Mode
 
 - If AGENT_HEADLESS=1, do not ask questions.
-- Record assumptions and deferred scope instead of stopping for clarification.
+- Use the existing clarify artifact as the request contract.
+- If the clarify artifact is still insufficient, record assumptions and
+  deferred scope instead of stopping for clarification.
 - Write all required files before returning.
 - Preserve workflow and session metadata already present in `{task_dir.relative_to(root)}/index.json`.
 
@@ -341,11 +352,14 @@ Attempt:
 
 ## Required Files
 
-- `{task_dir.relative_to(root)}/artifacts/01-clarify.md`
 - `{task_dir.relative_to(root)}/artifacts/02-context.md`
 - `{task_dir.relative_to(root)}/artifacts/03-plan.md`
 - `{task_dir.relative_to(root)}/index.json`
 - `{task_dir.relative_to(root)}/phase<N>.md` files for the build session
+
+## Main-Session Clarify Artifact
+
+{read_artifact_if_exists(task_dir, "artifacts/01-clarify.md") or "Missing clarify artifact."}
 
 ## Original User Request
 
@@ -374,6 +388,57 @@ def missing_analysis_artifacts(task_dir: Path) -> list[str]:
     return missing
 
 
+def resolve_input_path(root: Path, value: str) -> Path:
+    path = Path(value).expanduser()
+    if path.is_absolute():
+        return path
+    return root / path
+
+
+def seed_clarify_artifact(root: Path, task_dir: Path, clarify_file: Path) -> int:
+    if not clarify_file.exists():
+        raise FileNotFoundError(clarify_file)
+    content = clarify_file.read_text().strip()
+    if not content:
+        raise ValueError(f"clarify file is empty: {clarify_file}")
+
+    artifact = task_dir / CLARIFY_PHASE[2]
+    artifact.parent.mkdir(parents=True, exist_ok=True)
+    artifact.write_text(content + "\n")
+
+    completed_at = now_iso()
+    set_session_status(
+        task_dir,
+        "clarify",
+        status="completed",
+        attempts=1,
+        max_attempts=1,
+        completed_at=completed_at,
+        source="main_session",
+    )
+    set_workflow_status(
+        task_dir,
+        "clarify",
+        status="completed",
+        attempts=1,
+        max_attempts=1,
+        completed_at=completed_at,
+        source="main_session",
+    )
+
+    index_path = task_dir / "index.json"
+    index = load_json(index_path)
+    index["clarify"] = {
+        "artifact": CLARIFY_PHASE[2],
+        "source": "main_session",
+        "source_file": str(clarify_file),
+        "completed_at": completed_at,
+    }
+    save_json(index_path, index)
+    log(f"phase=clarify completed source=main_session artifact={artifact.relative_to(root)}")
+    return 0
+
+
 def run_analysis_session(
     root: Path,
     task_dir: Path,
@@ -389,7 +454,7 @@ def run_analysis_session(
     prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
 
     for attempt in range(1, max_attempts + 1):
-        log(f"session=analysis attempt={attempt}/{max_attempts} timeout={timeout_sec}s phases=clarify,context,plan")
+        log(f"session=analysis attempt={attempt}/{max_attempts} timeout={timeout_sec}s phases=context,plan")
         set_session_status(task_dir, "analysis", status="running", attempts=attempt)
         for phase_name, _, _ in ANALYSIS_PHASES:
             set_workflow_status(task_dir, phase_name, status="running", attempts=attempt)
@@ -646,8 +711,19 @@ def run_workflow(
     session_timeout_sec: int,
     commit_mode: str = "none",
     commit_message: str | None = None,
+    clarify_file: Path | None = None,
 ) -> int:
     root = find_project_root()
+    if clarify_file is None:
+        log("phase=clarify failed: main-session clarify artifact is required; pass --clarify-file")
+        return 2
+    if not clarify_file.exists():
+        log(f"phase=clarify failed: clarify file does not exist: {clarify_file}")
+        return 2
+    if not clarify_file.read_text().strip():
+        log(f"phase=clarify failed: clarify file is empty: {clarify_file}")
+        return 2
+
     config = load_config(root)
     execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
     session_strategy = str(execution.get("session_strategy", "balanced"))
@@ -656,6 +732,8 @@ def run_workflow(
     provider = load_provider(provider_name, root)
     task_dir = create_task(root, request, task_name or request.splitlines()[0][:60], max_attempts, session_strategy)
     log(f"created task=tasks/{task_dir.name} provider={provider.name} max_attempts={max_attempts} strategy={session_strategy}")
+
+    seed_clarify_artifact(root, task_dir, clarify_file)
 
     code = run_analysis_session(root, task_dir, provider, request, max_attempts, session_timeout_sec)
     if code != 0:
@@ -703,14 +781,15 @@ def run_workflow(
 
 def main() -> int:
     parser = argparse.ArgumentParser(
-        description="Run a five-phase artifact workflow using balanced analysis/build/evaluate sessions."
+        description="Run a five-phase artifact workflow using main-session clarify plus balanced headless sessions."
     )
     parser.add_argument("request", nargs="*", help="Work request to execute")
     parser.add_argument("--request-file", default=None, help="Read the work request from a file")
     parser.add_argument("--provider", default=None, help="Provider name override")
     parser.add_argument("--task-name", default=None, help="Task name override")
-    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts for analysis, build phases, and evaluate")
+    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts for context/plan analysis, build phases, and evaluate")
     parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
+    parser.add_argument("--clarify-file", default=None, help="Path to the main-session clarify artifact markdown file")
     parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--commit-mode", choices=["none", "final", "phase"], default=None, help="Commit mode: none, final, or phase")
     parser.add_argument("--commit-on-success", action="store_true", help=argparse.SUPPRESS)
@@ -743,6 +822,13 @@ def main() -> int:
         request = " ".join(args.request).strip()
     if not request:
         parser.error("request text or --request-file is required")
+    if not args.clarify_file:
+        parser.error("--clarify-file is required because clarify runs in the main session before headless workflow")
+    clarify_file = resolve_input_path(root, args.clarify_file) if args.clarify_file else None
+    if clarify_file and not clarify_file.exists():
+        parser.error(f"--clarify-file does not exist: {clarify_file}")
+    if clarify_file and not clarify_file.read_text().strip():
+        parser.error(f"--clarify-file is empty: {clarify_file}")
     return run_workflow(
         request,
         args.provider,
@@ -751,6 +837,7 @@ def main() -> int:
         max(1, session_timeout_sec),
         commit_mode,
         commit_message,
+        clarify_file,
     )
 
 

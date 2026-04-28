@@ -59,6 +59,8 @@ Each `phase<N>.md` must be self-contained and include:
 ## Rules
 
 - Do not implement code.
+- Do not overwrite `artifacts/01-clarify.md`; treat it as the user decision
+  contract from the main session.
 - Phase 0 should update docs when docs need to reflect the work.
 - Keep phases small enough for isolated execution.
 - Dependencies and done conditions must be explicit.

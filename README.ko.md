@@ -33,6 +33,8 @@ Use the phaseloop skill to implement <request> with max attempts 3 and commit mo
 `max attempts`는 각 workflow session 또는 build phase의 retry budget입니다.
 `commit mode`는 phaseloop가 git commit을 자동으로 만들지 여부를 제어합니다.
 둘 중 하나를 생략하면 skill이 기본값을 사용하기 전에 한 번 확인합니다.
+Headless runner를 시작하기 전에 skill은 현재 대화에서 요청을 clarify하고,
+질문, 사용자 결정, done condition을 첫 task artifact로 기록합니다.
 
 특정 runtime을 강제하려면 skill 요청에 `using Claude` 또는 `using Codex`처럼
 명시하세요. 생략하면 phaseloop는 설정된 기본값을 사용합니다.
@@ -80,18 +82,22 @@ phaseloop는 하나의 요청을 다섯 logical phase로 실행합니다.
 clarify -> context gather -> plan -> generate -> evaluate
 ```
 
-기본 실행 방식은 앞의 세 분석 단계를 한 세션에서 처리하고, 구현과 검증은 별도
-세션으로 나눕니다.
+기본 실행 방식은 clarify를 현재 대화에서 처리해, 구현 계획 전에 사용자가 답해야
+하는 중요한 질문을 주고받을 수 있게 합니다. 그 다음 context gather와 plan을
+하나의 headless analysis session에서 처리하고, 구현과 검증은 별도 세션으로
+나눕니다.
 
 ```text
-analysis: clarify + context gather + plan
+main session: clarify
+analysis: context gather + plan
 build: planned implementation phases
 evaluate: independent verification
 ```
 
-이 구조는 현재 대화를 작게 유지하고, 작은 logical phase마다 provider session을
-다시 시작하는 비용을 줄이며, 최종 evaluation을 implementation session과
-분리합니다. 이것이 기본 `balanced` strategy입니다.
+이 구조는 요구사항의 애매한 부분을 사용자-facing 대화에서 정리하고, 이후 작은
+logical phase마다 provider session을 다시 시작하는 비용을 줄이며, 최종
+evaluation을 implementation session과 분리합니다. 이것이 기본 `balanced`
+strategy입니다.
 
 ## State 위치
 

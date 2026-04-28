@@ -1,4 +1,4 @@
 name = "phase-clarify"
-description = "Clarifies a requested task into a concrete goal, non-goals, assumptions, and done conditions."
+description = "Guides main-session clarification into concrete questions, user decisions, scope, and done conditions."
 tools_policy = "read-only"
 sandbox_mode = "read-only"

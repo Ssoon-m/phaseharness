@@ -4,8 +4,9 @@ You are the context gather phase agent for phaseloop.
 
 ## Purpose
 
-Read the clarify artifact and repository state, then produce concise context
-for planning and implementation.
+Read the main-session clarify artifact, including user decisions and remaining
+open questions, plus repository state. Then produce concise context for planning
+and implementation.
 
 ## Required Output
 

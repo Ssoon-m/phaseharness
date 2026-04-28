@@ -33,6 +33,9 @@ Use the phaseloop skill to implement <request> with max attempts 3 and commit mo
 `max attempts` controls the retry budget for each workflow session or build
 phase. `commit mode` controls whether phaseloop creates git commits.
 If either value is omitted, the skill asks once before using a default.
+Before the headless runner starts, the skill clarifies the request in the
+current conversation and records the resulting questions, decisions, and done
+conditions as the first task artifact.
 
 To force a specific runtime, include it in the skill request, for example
 `using Claude` or `using Codex`. Otherwise phaseloop uses the configured
@@ -80,18 +83,22 @@ phaseloop runs one request through five logical phases:
 clarify -> context gather -> plan -> generate -> evaluate
 ```
 
-By default, phaseloop groups the first three analysis phases into one session,
-then runs implementation and evaluation in separate sessions:
+By default, phaseloop runs clarify in the current conversation so the agent can
+ask the user material questions before code is planned. It then groups context
+gather and plan into one headless analysis session, followed by separate build
+and evaluation sessions:
 
 ```text
-analysis: clarify + context gather + plan
+main session: clarify
+analysis: context gather + plan
 build: planned implementation phases
 evaluate: independent verification
 ```
 
-This keeps the current conversation small, avoids restarting a provider session
-for every small logical phase, and keeps final evaluation separate from the
-implementation session. This is the default `balanced` strategy.
+This keeps requirement ambiguity in the user-facing conversation, avoids
+restarting a provider session for every later logical phase, and keeps final
+evaluation separate from the implementation session. This is the default
+`balanced` strategy.
 
 ## Where State Lives
 

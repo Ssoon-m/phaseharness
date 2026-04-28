@@ -48,13 +48,16 @@ Canonical workflow roles:
 - `phase-generate`
 - `phase-evaluate`
 
-Automation may call these roles as isolated headless agent sessions. Runtime bridges
-also expose them as native subagents for interactive Claude/Codex use.
+Automation may call context, plan, generate, and evaluate roles as isolated
+headless agent sessions. The clarify role is a main-session guide and artifact
+contract, not a default headless phase. Runtime bridges also expose roles as
+native subagents for interactive Claude/Codex use.
 
 In the default balanced workflow, the orchestrator combines
-`phase-clarify`, `phase-context`, and `phase-plan` into one analysis agent
-session. The roles remain separate canonical prompt assets so the contract stays
-readable and bridgeable even when a session executes more than one logical role.
+`phase-context` and `phase-plan` into one analysis agent session after
+main-session clarify writes the first artifact. The roles remain separate
+canonical prompt assets so the contract stays readable and bridgeable even when
+a session executes more than one logical role.
 
 ## Role Metadata
 
@@ -62,7 +65,7 @@ readable and bridgeable even when a session executes more than one logical role.
 
 ```toml
 name = "phase-clarify"
-description = "Clarifies a requested task into a concrete goal, non-goals, assumptions, and done conditions."
+description = "Guides main-session clarification into concrete questions, user decisions, scope, and done conditions."
 sandbox_mode = "read-only"
 tools_policy = "read-only"
 ```

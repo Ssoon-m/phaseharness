@@ -9,7 +9,8 @@ The goal is not to generate a different automation system for every target repos
 - stable file contracts that survive runtime changes
 - provider adapters for runtime-specific invocation details
 - a five-phase artifact workflow for explicit work requests
-- balanced headless session boundaries for analysis, build, and evaluate
+- main-session clarify plus balanced headless session boundaries for analysis,
+  build, and evaluate
 - bridge sync hooks that keep generated Claude/Codex bridge files current
 - an optional commit skill for completed workflow results
 - explicit `none`, `final`, and `phase` commit modes, defaulting to `none`
@@ -25,16 +26,18 @@ The goal is not to generate a different automation system for every target repos
 
 The harness treats files and git as the durable memory layer. It does not assume that a Claude or Codex conversation will keep enough context to continue safely.
 
-The default runtime shape keeps the interactive session small. The harness runs
-analysis, build, and evaluate in fresh headless agent sessions, passing only
-durable artifacts between those sessions.
+The default runtime shape uses the interactive session for clarify, where user
+questions and decisions belong. The harness then runs analysis, build, and
+evaluate in fresh headless agent sessions, passing only durable artifacts
+between those sessions.
 
 The stable units are:
 
 - state files in `tasks/`
 - phase lifecycle rules
 - phase artifacts for clarify, context gather, plan, generate, and evaluate
-- session lifecycle rules for analysis, build, and evaluate
+- session lifecycle rules for main-session clarify plus headless analysis,
+  build, and evaluate
 - provider-neutral prompt execution
 - skill and role bridges generated from canonical sources
 - hook adapters that call one shared bridge sync script

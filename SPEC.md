@@ -6,7 +6,9 @@ phaseloop는 Claude Code와 Codex에서 함께 사용할 수 있는 설치형 ag
 
 목표는 특정 런타임의 대화 기억에 기대지 않고, 명시적인 작업 요청을 파일 기반 artifact pipeline으로 실행하는 것이다.
 
-기본 실행 모델은 balanced headless sessions다. 현재 대화 세션은 orchestrator 역할만 하고, 실제 작업은 `analysis`, `build`, `evaluate` headless agent session으로 분리한다.
+기본 실행 모델은 main-session clarify와 balanced headless sessions다. 현재
+대화 세션은 `clarify`를 수행해 사용자와 필요한 질문을 주고받고, 이후 작업은
+`analysis`, `build`, `evaluate` headless agent session으로 분리한다.
 
 핵심 사용 시나리오:
 
@@ -162,7 +164,7 @@ canonical source는 `.agent-harness/` 아래에 있다.
 phaseloop의 실행 단위는 명시적인 작업 요청이다.
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --provider codex --max-attempts 2 --session-timeout-sec 600
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "Implement <small request>" --clarify-file tasks/.phaseloop-clarify.md --provider codex --max-attempts 2 --session-timeout-sec 600
 ```
 
 또는 에이전트 세션에서:
@@ -173,7 +175,7 @@ Use the phaseloop skill to implement <small request>.
 
 실행 순서:
 
-1. `clarify`: 사용자 요구사항을 이해하고 goal, done condition, assumption, non-goal을 정리한다.
+1. `clarify`: 현재 대화에서 사용자 요구사항을 이해하고 필요한 질문, 사용자 결정, goal, done condition, assumption, non-goal을 정리한다.
 2. `context gather`: 참고해야 할 문서, 코드, 패턴, 제약을 찾는다.
 3. `plan`: task index와 phase 파일을 생성한다.
 4. `generate`: phase 파일을 순서대로 실행하고 구현한다.
@@ -182,11 +184,14 @@ Use the phaseloop skill to implement <small request>.
 
 기본 에이전트 세션 경계는 logical phase와 1:1이 아니다.
 
-- `analysis` session: `clarify`, `context gather`, `plan`을 한 headless agent session에서 수행한다.
+- `clarify` main session: 사용자와 핑퐁하며 `artifacts/01-clarify.md` 입력 파일을 만든다.
+- `analysis` session: `context gather`, `plan`을 한 headless agent session에서 수행한다.
 - `build` session(s): `phase<N>.md` 구현 phase를 수행한다.
 - `evaluate` session: 구현 세션과 분리된 headless agent session에서 검증한다.
 
-이 전략은 앞 단계의 탐색 대화가 구현/검증 context에 계속 쌓이는 것을 막으면서도, 작은 logical phase마다 AGENTS.md 같은 runtime startup context를 반복 로드하는 비용을 줄인다.
+이 전략은 요구사항의 애매한 부분을 사용자-facing 대화에서 정리하면서도, 이후
+탐색 대화가 구현/검증 context에 계속 쌓이는 것을 막고 작은 logical phase마다
+AGENTS.md 같은 runtime startup context를 반복 로드하는 비용을 줄인다.
 
 표준 결과는 항상 artifact 파일이다. native subagent bridge는 interactive convenience일 수 있지만 lifecycle correctness의 기준은 아니다.
 
@@ -211,7 +216,7 @@ commit 단계는 아래 조건을 만족해야 한다.
 
 ## 7. Retry Contract
 
-`--max-attempts`는 analysis session, implementation phase, evaluate session 재시도 횟수의 기본값이다. Logical workflow phase 상태는 이 session 실행 결과를 반영한다.
+`--max-attempts`는 analysis session, implementation phase, evaluate session 재시도 횟수의 기본값이다. Clarify는 현재 대화에서 사용자 결정으로 완료되므로 headless retry 대상이 아니다. Logical workflow phase 상태는 이 session 실행 결과를 반영한다.
 
 실패 시:
 

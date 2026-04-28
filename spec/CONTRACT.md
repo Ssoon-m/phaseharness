@@ -70,8 +70,16 @@ Allowed task statuses:
   },
   "sessions": [
     {
+      "session": "clarify",
+      "phases": ["clarify"],
+      "status": "completed",
+      "attempts": 1,
+      "max_attempts": 1,
+      "source": "main_session"
+    },
+    {
       "session": "analysis",
-      "phases": ["clarify", "context", "plan"],
+      "phases": ["context", "plan"],
       "status": "completed",
       "attempts": 1,
       "max_attempts": 2
@@ -97,7 +105,8 @@ Allowed task statuses:
       "artifact": "artifacts/01-clarify.md",
       "status": "completed",
       "attempts": 1,
-      "max_attempts": 2
+      "max_attempts": 1,
+      "source": "main_session"
     }
   ],
   "artifacts": {
@@ -160,7 +169,7 @@ changes into the workflow result.
 
 Explicit work requests use a five-phase artifact workflow:
 
-1. `clarify` writes `artifacts/01-clarify.md`.
+1. `clarify` runs in the main conversation and writes `artifacts/01-clarify.md`.
 2. `context` writes `artifacts/02-context.md`.
 3. `plan` writes `artifacts/03-plan.md`, `index.json`, and `phase<N>.md` files.
 4. `generate` executes the phase files and appends `artifacts/04-generate.md`.
@@ -168,7 +177,9 @@ Explicit work requests use a five-phase artifact workflow:
 
 The default session strategy is `balanced`:
 
-- `analysis` runs logical phases 1-3 in one headless agent session.
+- `clarify` runs in the current conversation so user decisions are captured
+  before headless work starts.
+- `analysis` runs logical phases 2-3 in one headless agent session.
 - `build` runs implementation phases from `phase<N>.md`.
 - `evaluate` runs final verification in a separate headless agent session.
 

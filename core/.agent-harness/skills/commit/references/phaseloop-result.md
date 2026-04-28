@@ -40,6 +40,9 @@ explicitly wants phaseloop artifacts committed.
 When starting a phaseloop workflow, do not auto-commit by default. Use
 `--commit-mode none` unless the user chooses another mode.
 
+Clarify runs in the main session first. The headless workflow command requires
+the clarify artifact path via `--clarify-file`.
+
 Available modes:
 
 - `none`: no automatic commit
@@ -49,9 +52,9 @@ Available modes:
   create an empty validation commit
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode none
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode final
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode phase
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --clarify-file tasks/.phaseloop-clarify.md --max-attempts 2 --session-timeout-sec 600 --commit-mode none
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --clarify-file tasks/.phaseloop-clarify.md --max-attempts 2 --session-timeout-sec 600 --commit-mode final
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --clarify-file tasks/.phaseloop-clarify.md --max-attempts 2 --session-timeout-sec 600 --commit-mode phase
 ```
 
 Use `--commit-message` only when the user gives a specific message or the
@@ -59,5 +62,5 @@ message can be inferred with high confidence from repository history. It is
 valid only with `--commit-mode final`:
 
 ```bash
-AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --max-attempts 2 --session-timeout-sec 600 --commit-mode final --commit-message "feat: add alarm settings"
+AGENT_HEADLESS=1 python3 scripts/run-workflow.py "<request>" --clarify-file tasks/.phaseloop-clarify.md --max-attempts 2 --session-timeout-sec 600 --commit-mode final --commit-message "feat: add alarm settings"
 ```
