@@ -244,6 +244,17 @@ def set_session_status(task_dir: Path, session_name: str, **fields: Any) -> None
     save_json(index_path, index)
 
 
+def set_evaluation_status(task_dir: Path, **fields: Any) -> None:
+    index_path = task_dir / "index.json"
+    index = load_json(index_path)
+    evaluation = index.get("evaluation", {})
+    if not isinstance(evaluation, dict):
+        evaluation = {}
+    evaluation.update(fields)
+    index["evaluation"] = evaluation
+    save_json(index_path, index)
+
+
 def evaluate_prompt(root: Path, task_dir: Path, attempt: int, max_attempts: int) -> str:
     task_index = (task_dir / "index.json").read_text()
     task_rel = task_dir.relative_to(root)
@@ -360,13 +371,16 @@ def resolve_input_path(root: Path, value: str) -> Path:
     return root / path
 
 
-def seed_clarify_artifact(root: Path, task_dir: Path, clarify_file: Path) -> int:
-    if not clarify_file.exists():
-        raise FileNotFoundError(clarify_file)
-    content = clarify_file.read_text().strip()
+def read_clarify_file(path: Path) -> str:
+    if not path.exists():
+        raise ValueError(f"clarify file does not exist: {path}")
+    content = path.read_text().strip()
     if not content:
-        raise ValueError(f"clarify file is empty: {clarify_file}")
+        raise ValueError(f"clarify file is empty: {path}")
+    return content
 
+
+def seed_clarify_artifact(root: Path, task_dir: Path, clarify_file: Path, content: str) -> None:
     artifact = task_dir / CLARIFY_PHASE[2]
     artifact.parent.mkdir(parents=True, exist_ok=True)
     artifact.write_text(content + "\n")
@@ -401,7 +415,6 @@ def seed_clarify_artifact(root: Path, task_dir: Path, clarify_file: Path) -> int
     }
     save_json(index_path, index)
     log(f"phase=clarify completed source=main_session artifact={artifact.relative_to(root)}")
-    return 0
 
 
 def run_analysis_session(
@@ -488,6 +501,7 @@ def run_evaluate(
         log(f"session=evaluate attempt={attempt}/{max_attempts} timeout={timeout_sec}s task={task_dir.name}")
         set_session_status(task_dir, "evaluate", status="running", attempts=attempt, max_attempts=max_attempts)
         set_workflow_status(task_dir, "evaluate", status="running", attempts=attempt)
+        set_evaluation_status(task_dir, status="running", attempts=attempt, max_attempts=max_attempts)
         result = provider.run_prompt(
             evaluate_prompt(root, task_dir, attempt, max_attempts),
             cwd=str(root),
@@ -524,18 +538,20 @@ def run_evaluate(
             continue
 
     error = "evaluation artifact was not created or status was not pass/warn"
+    failed_at = now_iso()
+    set_evaluation_status(task_dir, status="fail", failed_at=failed_at, error_message=error)
     set_workflow_status(
         task_dir,
         "evaluate",
         status="error",
-        failed_at=now_iso(),
+        failed_at=failed_at,
         error_message=error,
     )
     set_session_status(
         task_dir,
         "evaluate",
         status="error",
-        failed_at=now_iso(),
+        failed_at=failed_at,
         error_message=error,
     )
     log("session=evaluate failed")
@@ -643,16 +659,37 @@ def run_generate(
     return return_code
 
 
-def update_top_status(root: Path, task_dir: Path, status: str) -> None:
+def update_task_status(root: Path, task_dir: Path, status: str) -> None:
+    changed_at = now_iso()
+    index_path = task_dir / "index.json"
+    if index_path.exists():
+        index = load_json(index_path)
+        index["status"] = status
+        if status == "completed":
+            index["completed_at"] = changed_at
+            index.pop("failed_at", None)
+        elif status == "error":
+            index["failed_at"] = changed_at
+            index.pop("completed_at", None)
+        else:
+            index.pop("completed_at", None)
+            index.pop("failed_at", None)
+        save_json(index_path, index)
+
     top_path = root / "tasks" / "index.json"
     top = load_json(top_path, {"tasks": []})
     for item in top.get("tasks", []):
         if item.get("dir") == task_dir.name:
             item["status"] = status
             if status == "completed":
-                item["completed_at"] = now_iso()
+                item["completed_at"] = changed_at
+                item.pop("failed_at", None)
             elif status == "error":
-                item["failed_at"] = now_iso()
+                item["failed_at"] = changed_at
+                item.pop("completed_at", None)
+            else:
+                item.pop("completed_at", None)
+                item.pop("failed_at", None)
             break
     save_json(top_path, top)
 
@@ -671,11 +708,10 @@ def run_workflow(
     if clarify_file is None:
         log("phase=clarify failed: main-session clarify artifact is required; pass --clarify-file")
         return 2
-    if not clarify_file.exists():
-        log(f"phase=clarify failed: clarify file does not exist: {clarify_file}")
-        return 2
-    if not clarify_file.read_text().strip():
-        log(f"phase=clarify failed: clarify file is empty: {clarify_file}")
+    try:
+        clarify_content = read_clarify_file(clarify_file)
+    except ValueError as exc:
+        log(f"phase=clarify failed: {exc}")
         return 2
 
     config = load_config(root)
@@ -687,17 +723,18 @@ def run_workflow(
     task_dir = create_task(root, request, task_name or request.splitlines()[0][:60], max_attempts, session_strategy)
     log(f"created task=tasks/{task_dir.name} provider={provider.name} max_attempts={max_attempts} strategy={session_strategy}")
 
-    seed_clarify_artifact(root, task_dir, clarify_file)
+    seed_clarify_artifact(root, task_dir, clarify_file, clarify_content)
 
     code = run_analysis_session(root, task_dir, provider, request, max_attempts, session_timeout_sec)
     if code != 0:
-        update_top_status(root, task_dir, "error")
+        update_task_status(root, task_dir, "error")
         return code
 
     code = run_generate(root, task_dir, provider_name, max_attempts, session_timeout_sec, commit_mode)
     if code != 0:
-        update_top_status(root, task_dir, "error")
+        update_task_status(root, task_dir, "error")
         return code
+    update_task_status(root, task_dir, "pending")
 
     code = run_evaluate(
         root,
@@ -707,14 +744,10 @@ def run_workflow(
         session_timeout_sec,
     )
     if code != 0:
-        update_top_status(root, task_dir, "error")
+        update_task_status(root, task_dir, "error")
         return code
 
-    index = load_json(task_dir / "index.json")
-    index["status"] = "completed"
-    index["completed_at"] = now_iso()
-    save_json(task_dir / "index.json", index)
-    update_top_status(root, task_dir, "completed")
+    update_task_status(root, task_dir, "completed")
     log(f"workflow completed: tasks/{task_dir.name}")
 
     if commit_mode == "final":
@@ -773,10 +806,6 @@ def main() -> int:
     if not args.clarify_file:
         parser.error("--clarify-file is required because clarify runs in the main session before headless workflow")
     clarify_file = resolve_input_path(root, args.clarify_file) if args.clarify_file else None
-    if clarify_file and not clarify_file.exists():
-        parser.error(f"--clarify-file does not exist: {clarify_file}")
-    if clarify_file and not clarify_file.read_text().strip():
-        parser.error(f"--clarify-file is empty: {clarify_file}")
     return run_workflow(
         request,
         args.provider,
