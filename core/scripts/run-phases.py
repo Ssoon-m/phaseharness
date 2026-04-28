@@ -201,12 +201,6 @@ def build_phase_prompt(root: Path, task_dir: Path, phase: dict[str, Any], attemp
         content = read_artifact_if_exists(task_dir, rel)
         if content:
             artifacts.append(f"## {task_dir.relative_to(root)}/{rel}\n\n{content}")
-    docs = []
-    for rel in ("docs/mission.md", "docs/spec.md", "docs/testing.md", "docs/user-intervention.md"):
-        path = root / rel
-        if path.exists():
-            docs.append(f"## {rel}\n\n{path.read_text()}")
-    docs_text = "\n\n".join(docs) if docs else "No project docs found."
     artifacts_text = "\n\n".join(artifacts) if artifacts else "No prior artifacts found."
     return f"""You are executing one harness phase in an independent session.
 
@@ -232,9 +226,7 @@ Attempt:
 
 {artifacts_text}
 
-## Project Docs
-
-{docs_text}
+Read project docs from `docs/` when they are relevant to this phase.
 
 ## Phase Content
 
@@ -263,11 +255,6 @@ def build_evaluation_prompt(root: Path, task_dir: Path, attempt: int, max_attemp
         content = read_artifact_if_exists(task_dir, rel)
         if content:
             artifacts.append(f"## {task_dir.relative_to(root)}/{rel}\n\n{content}")
-    docs = []
-    for rel in ("docs/mission.md", "docs/spec.md", "docs/testing.md", "docs/user-intervention.md"):
-        path = root / rel
-        if path.exists():
-            docs.append(f"## {rel}\n\n{path.read_text()}")
     return f"""You are executing the final evaluation phase in an independent session.
 
 {evaluate_role}
@@ -291,9 +278,7 @@ Attempt:
 
 {chr(10).join(artifacts) if artifacts else "No prior artifacts found."}
 
-## Project Docs
-
-{chr(10).join(docs) if docs else "No project docs found."}
+Read project docs from `docs/` when they are relevant to evaluation.
 """
 
 

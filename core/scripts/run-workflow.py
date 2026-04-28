@@ -53,15 +53,6 @@ def next_task_number(root: Path) -> int:
     return max_id + 1
 
 
-def docs_context(root: Path) -> str:
-    docs = []
-    for rel in ("docs/mission.md", "docs/spec.md", "docs/testing.md", "docs/user-intervention.md"):
-        path = root / rel
-        if path.exists():
-            docs.append(f"## {rel}\n\n{path.read_text()}")
-    return "\n\n".join(docs) if docs else "No project docs found."
-
-
 def role_prompt(root: Path, role_name: str) -> str:
     return (root / ".agent-harness" / "roles" / role_name / "prompt.md").read_text()
 
@@ -304,9 +295,7 @@ Attempt:
 
 {read_existing_artifacts(task_dir)}
 
-## Project Docs
-
-{docs_context(root)}
+Read project docs from `docs/` when they are relevant to this phase.
 {extra}
 """
 
@@ -371,9 +360,7 @@ Attempt:
 {task_index}
 ```
 
-## Project Docs
-
-{docs_context(root)}
+Read project docs from `docs/` when they are relevant to context or planning.
 """
 
 
