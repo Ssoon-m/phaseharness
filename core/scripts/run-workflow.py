@@ -57,21 +57,6 @@ def role_prompt(root: Path, role_name: str) -> str:
     return (root / ".agent-harness" / "roles" / role_name / "prompt.md").read_text()
 
 
-def read_existing_artifacts(task_dir: Path) -> str:
-    parts = []
-    for rel in (
-        "artifacts/01-clarify.md",
-        "artifacts/02-context.md",
-        "artifacts/03-plan.md",
-        "artifacts/04-generate.md",
-        "artifacts/05-evaluate.md",
-    ):
-        path = task_dir / rel
-        if path.exists():
-            parts.append(f"## {rel}\n\n{path.read_text()}")
-    return "\n\n".join(parts) if parts else "No prior artifacts found."
-
-
 def read_artifact_if_exists(task_dir: Path, rel: str) -> str:
     path = task_dir / rel
     return path.read_text() if path.exists() else ""
@@ -259,31 +244,21 @@ def set_session_status(task_dir: Path, session_name: str, **fields: Any) -> None
     save_json(index_path, index)
 
 
-def phase_prompt(root: Path, task_dir: Path, role_name: str, request: str, artifact: str, attempt: int, max_attempts: int) -> str:
+def evaluate_prompt(root: Path, task_dir: Path, attempt: int, max_attempts: int) -> str:
     task_index = (task_dir / "index.json").read_text()
-    extra = ""
-    if role_name == "phase-plan":
-        extra = f"""
-## Task Creation Contract
+    task_rel = task_dir.relative_to(root)
+    return f"""You are executing the final phaseloop evaluation phase.
 
-{(root / ".agent-harness" / "prompts" / "task-create.md").read_text()}
-"""
-    return f"""You are running as an isolated phaseloop phase subagent.
-
-{role_prompt(root, role_name)}
+{role_prompt(root, "phase-evaluate")}
 
 Headless mode:
 - If AGENT_HEADLESS=1, do not ask questions.
-- Write the required artifact to `{task_dir.relative_to(root) / artifact}`.
-- Read previous artifacts from `{task_dir.relative_to(root)}/artifacts/`.
-- Preserve the task directory and update `{task_dir.relative_to(root)}/index.json` when your phase requires it.
+- Verify the generated work against the clarify contract and phase acceptance criteria.
+- Write `{task_rel}/artifacts/05-evaluate.md`.
+- Update `{task_rel}/index.json` evaluation status to `pass`, `warn`, or `fail`.
 
 Attempt:
-- This is attempt {attempt} of {max_attempts}.
-
-## Original User Request
-
-{request}
+- This is evaluation attempt {attempt} of {max_attempts}.
 
 ## Task Index
 
@@ -291,12 +266,15 @@ Attempt:
 {task_index}
 ```
 
-## Previous Artifacts
+## Task Files
 
-{read_existing_artifacts(task_dir)}
+- `{task_rel}/artifacts/01-clarify.md`
+- `{task_rel}/artifacts/02-context.md`
+- `{task_rel}/artifacts/03-plan.md`
+- `{task_rel}/artifacts/04-generate.md`
+- `{task_rel}/phase<N>.md`
 
-Read project docs from `docs/` when they are relevant to this phase.
-{extra}
+Read task files and project docs from `docs/` when they are relevant to evaluation.
 """
 
 
@@ -492,31 +470,26 @@ def run_analysis_session(
     return 1
 
 
-def run_artifact_phase(
+def run_evaluate(
     root: Path,
     task_dir: Path,
     provider: Any,
-    request: str,
-    phase_name: str,
-    role_name: str,
-    artifact: str,
     max_attempts: int,
     timeout_sec: int,
-    session_name: str | None = None,
 ) -> int:
     config = load_config(root)
     execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
     sandbox_mode = str(execution.get("sandbox_mode", "workspace-write"))
     approval_policy = str(execution.get("approval_policy", "never"))
     prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
+    artifact = task_dir / "artifacts" / "05-evaluate.md"
 
     for attempt in range(1, max_attempts + 1):
-        log(f"phase={phase_name} attempt={attempt}/{max_attempts} timeout={timeout_sec}s artifact={task_dir / artifact}")
-        if session_name:
-            set_session_status(task_dir, session_name, status="running", attempts=attempt, max_attempts=max_attempts)
-        set_workflow_status(task_dir, phase_name, status="running", attempts=attempt)
+        log(f"session=evaluate attempt={attempt}/{max_attempts} timeout={timeout_sec}s task={task_dir.name}")
+        set_session_status(task_dir, "evaluate", status="running", attempts=attempt, max_attempts=max_attempts)
+        set_workflow_status(task_dir, "evaluate", status="running", attempts=attempt)
         result = provider.run_prompt(
-            phase_prompt(root, task_dir, role_name, request, artifact, attempt, max_attempts),
+            evaluate_prompt(root, task_dir, attempt, max_attempts),
             cwd=str(root),
             timeout_sec=timeout_sec,
             sandbox_mode=sandbox_mode,
@@ -525,52 +498,47 @@ def run_artifact_phase(
             capture_json=True,
         )
         save_json(
-            task_dir / f"{phase_name}-output-attempt{attempt}.json",
+            task_dir / f"evaluate-output-attempt{attempt}.json",
             {
-                "phase": phase_name,
+                "phase": "evaluate",
                 "attempt": attempt,
                 "provider": provider.name,
                 **result,
             },
         )
-        if (task_dir / artifact).exists():
-            if phase_name == "evaluate":
-                index = load_json(task_dir / "index.json")
-                evaluation = index.get("evaluation", {})
-                status = evaluation.get("status") if isinstance(evaluation, dict) else None
-                if status not in ("pass", "warn") and attempt < max_attempts:
-                    continue
-                if status not in ("pass", "warn"):
-                    set_workflow_status(task_dir, phase_name, status="error", failed_at=now_iso())
-                    if session_name:
-                        set_session_status(task_dir, session_name, status="error", failed_at=now_iso())
-                    return 1
-            set_workflow_status(task_dir, phase_name, status="completed", completed_at=now_iso())
-            if session_name:
-                set_session_status(task_dir, session_name, status="completed", completed_at=now_iso())
-            log(f"phase={phase_name} completed")
+
+        index = load_json(task_dir / "index.json")
+        evaluation = index.get("evaluation", {})
+        status = evaluation.get("status") if isinstance(evaluation, dict) else None
+        if artifact.exists() and status in ("pass", "warn"):
+            completed_at = now_iso()
+            set_workflow_status(task_dir, "evaluate", status="completed", completed_at=completed_at)
+            set_session_status(task_dir, "evaluate", status="completed", completed_at=completed_at)
+            log(f"session=evaluate completed status={status}")
             return 0
+
         if attempt < max_attempts:
-            log(f"phase={phase_name} missing artifact; retrying")
-            set_workflow_status(task_dir, phase_name, status="pending", last_failure_at=now_iso())
+            log(f"session=evaluate retrying status={status or 'unknown'}")
+            set_workflow_status(task_dir, "evaluate", status="pending", last_failure_at=now_iso())
+            set_session_status(task_dir, "evaluate", status="pending", last_failure_at=now_iso())
             continue
 
+    error = "evaluation artifact was not created or status was not pass/warn"
     set_workflow_status(
         task_dir,
-        phase_name,
+        "evaluate",
         status="error",
         failed_at=now_iso(),
-        error_message=f"{artifact} was not created within max_attempts",
+        error_message=error,
     )
-    if session_name:
-        set_session_status(
-            task_dir,
-            session_name,
-            status="error",
-            failed_at=now_iso(),
-            error_message=f"{artifact} was not created within max_attempts",
-        )
-    log(f"phase={phase_name} failed")
+    set_session_status(
+        task_dir,
+        "evaluate",
+        status="error",
+        failed_at=now_iso(),
+        error_message=error,
+    )
+    log("session=evaluate failed")
     return 1
 
 
@@ -731,18 +699,12 @@ def run_workflow(
         update_top_status(root, task_dir, "error")
         return code
 
-    phase_name, role_name, artifact = ARTIFACT_AGENT_PHASES[3]
-    code = run_artifact_phase(
+    code = run_evaluate(
         root,
         task_dir,
         provider,
-        request,
-        phase_name,
-        role_name,
-        artifact,
         max_attempts,
         session_timeout_sec,
-        session_name="evaluate",
     )
     if code != 0:
         update_top_status(root, task_dir, "error")
