@@ -593,7 +593,6 @@ def run_generate(
         task_dir.name,
         "--max-attempts",
         str(max_attempts),
-        "--skip-evaluation",
         "--session-timeout-sec",
         str(timeout_sec),
     ]

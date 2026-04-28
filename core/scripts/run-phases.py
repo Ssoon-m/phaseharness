@@ -242,134 +242,10 @@ def run_docs_diff(root: Path, task_dir: Path, baseline: str) -> None:
     )
 
 
-def build_evaluation_prompt(root: Path, task_dir: Path, attempt: int, max_attempts: int) -> str:
-    evaluate_role = read_role_prompt(root, "phase-evaluate")
-    task_index = (task_dir / "index.json").read_text()
-    artifacts = []
-    for rel in (
-        "artifacts/01-clarify.md",
-        "artifacts/02-context.md",
-        "artifacts/03-plan.md",
-        "artifacts/04-generate.md",
-    ):
-        content = read_artifact_if_exists(task_dir, rel)
-        if content:
-            artifacts.append(f"## {task_dir.relative_to(root)}/{rel}\n\n{content}")
-    return f"""You are executing the final evaluation phase in an independent session.
-
-{evaluate_role}
-
-Headless mode:
-- If AGENT_HEADLESS=1, do not ask questions.
-- Fix local validation errors when the fix is clearly in scope.
-- Write `{task_dir.relative_to(root)}/artifacts/05-evaluate.md`.
-- Update `{task_dir.relative_to(root)}/index.json` evaluation status.
-
-Attempt:
-- This is evaluation attempt {attempt} of {max_attempts}.
-
-## Task Index
-
-```json
-{task_index}
-```
-
-## Artifacts
-
-{chr(10).join(artifacts) if artifacts else "No prior artifacts found."}
-
-Read project docs from `docs/` when they are relevant to evaluation.
-"""
-
-
-def run_evaluation(
-    root: Path,
-    task_dir: Path,
-    provider: Any,
-    config: dict[str, Any],
-    provider_name: str | None,
-    max_attempts_override: int | None = None,
-    timeout_sec_override: int | None = None,
-) -> int:
-    del provider_name
-    index_path = task_dir / "index.json"
-    index = load_json(index_path)
-    evaluation = index.get("evaluation", {})
-    if not isinstance(evaluation, dict):
-        evaluation = {}
-    status = evaluation.get("status")
-    if status in ("pass", "warn"):
-        return 0
-
-    execution = config.get("execution", {}) if isinstance(config.get("execution"), dict) else {}
-    max_attempts = max_attempts_override or int(
-        evaluation.get("max_attempts") or configured_attempts(config, "evaluation_max_attempts", 1)
-    )
-    timeout = timeout_sec_override or int(execution.get("check_timeout_sec", 600))
-    sandbox_mode = str(execution.get("sandbox_mode", "workspace-write"))
-    approval_policy = str(execution.get("approval_policy", "never"))
-    prompt_handoff = str(execution.get("prompt_handoff", "stdin"))
-
-    for attempt in range(int(evaluation.get("attempts", 0)) + 1, max_attempts + 1):
-        log(f"session=evaluate attempt={attempt}/{max_attempts} timeout={timeout}s task={task_dir.name}")
-        index = load_json(index_path)
-        evaluation = index.get("evaluation", {})
-        if not isinstance(evaluation, dict):
-            evaluation = {}
-        evaluation.update({"status": "running", "attempts": attempt, "max_attempts": max_attempts})
-        index["evaluation"] = evaluation
-        save_json(index_path, index)
-
-        result = provider.run_prompt(
-            build_evaluation_prompt(root, task_dir, attempt, max_attempts),
-            cwd=str(root),
-            timeout_sec=timeout,
-            sandbox_mode=sandbox_mode,
-            approval_policy=approval_policy,
-            prompt_handoff=prompt_handoff,
-            capture_json=True,
-        )
-        save_json(
-            task_dir / f"evaluation-output-attempt{attempt}.json",
-            {
-                "attempt": attempt,
-                "provider": provider.name,
-                **result,
-            },
-        )
-
-        fresh = load_json(index_path)
-        fresh_eval = fresh.get("evaluation", {})
-        fresh_status = fresh_eval.get("status") if isinstance(fresh_eval, dict) else None
-        if fresh_status in ("pass", "warn"):
-            log(f"session=evaluate completed status={fresh_status}")
-            return 0
-        if attempt < max_attempts:
-            log(f"session=evaluate retrying status={fresh_status or 'unknown'}")
-            continue
-
-    index = load_json(index_path)
-    evaluation = index.get("evaluation", {})
-    if not isinstance(evaluation, dict):
-        evaluation = {}
-    evaluation.update(
-        {
-            "status": "fail",
-            "failed_at": now_iso(),
-            "error_message": "evaluation did not pass within max_attempts",
-        }
-    )
-    index["evaluation"] = evaluation
-    save_json(index_path, index)
-    log("session=evaluate failed")
-    return 1
-
-
 def run_phases(
     task_dir_name: str,
     provider_name: str | None = None,
     max_attempts_override: int | None = None,
-    skip_evaluation: bool = False,
     session_timeout_sec: int | None = None,
     commit_mode: str = "none",
 ) -> int:
@@ -393,10 +269,6 @@ def run_phases(
         index = load_json(index_path)
         phase = find_next_phase(index)
         if phase is None:
-            if not skip_evaluation and run_evaluation(root, task_dir, provider, config, provider_name, max_attempts_override, session_timeout_sec) != 0:
-                update_top_index(root, task_dir_name, "error")
-                log(f"evaluation failed: {task_dir_name}")
-                return 1
             index = load_json(index_path)
             index["completed_at"] = now_iso()
             index["status"] = "completed"
@@ -502,14 +374,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Run pending phases for a harness task.")
     parser.add_argument("task_dir", help="Task directory name under tasks/")
     parser.add_argument("--provider", default=None, help="Provider name override")
-    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per phase and evaluation")
+    parser.add_argument("--max-attempts", type=int, default=None, help="Retry attempts per phase")
     parser.add_argument("--session-timeout-sec", type=int, default=None, help="Timeout for each headless agent session or build phase call")
     parser.add_argument("--phase-timeout-sec", type=int, default=None, help=argparse.SUPPRESS)
     parser.add_argument("--commit-mode", choices=["none", "phase"], default="none", help="Commit mode for completed implementation phases")
-    parser.add_argument("--skip-evaluation", action="store_true", help="Do not run the final evaluation step")
     args = parser.parse_args()
     session_timeout_sec = args.session_timeout_sec or args.phase_timeout_sec
-    return run_phases(args.task_dir, args.provider, args.max_attempts, args.skip_evaluation, session_timeout_sec, args.commit_mode)
+    return run_phases(args.task_dir, args.provider, args.max_attempts, session_timeout_sec, args.commit_mode)
 
 
 if __name__ == "__main__":
