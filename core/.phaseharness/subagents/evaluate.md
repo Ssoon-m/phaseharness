@@ -7,6 +7,11 @@ Write `.phaseharness/runs/<run-id>/artifacts/05-evaluate.md` with:
 ```markdown
 # Phase 5: Evaluate
 
+## Executor
+- requested_subagent:
+- execution_mode:
+- delegation_error:
+
 ## Result
 pass | warn | fail
 

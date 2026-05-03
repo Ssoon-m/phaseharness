@@ -93,6 +93,23 @@ entries, skill symlinks, and provider-native subagent bridge files:
 - `.claude/agents/phaseharness-*.md`
 - `.codex/agents/phaseharness-*.toml`
 
+## Subagent Behavior
+
+Phaseharness installs provider-native subagent bridge files. Provider hooks run
+as shell commands, so they cannot call provider subagent APIs themselves. The
+Stop hook returns a continuation prompt whose first required action is a direct
+call to the phase-specific subagent:
+
+- Claude Code: `phaseharness-clarify`, `phaseharness-context-gather`,
+  `phaseharness-plan`, `phaseharness-generate`, `phaseharness-evaluate`
+- Codex: `phaseharness_clarify`, `phaseharness_context_gather`,
+  `phaseharness_plan`, `phaseharness_generate`, `phaseharness_evaluate`
+
+The parent conversation must not perform phase work itself. If the provider
+cannot invoke the subagent from a Stop-hook continuation, the run is set to
+`waiting_user` with a `subagent_unavailable` error instead of falling back to
+local execution.
+
 ## Development
 
 Run local verification:

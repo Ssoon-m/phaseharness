@@ -7,6 +7,11 @@ Write `.phaseharness/runs/<run-id>/artifacts/02-context.md` with:
 ```markdown
 # Phase 2: Context Gather
 
+## Executor
+- requested_subagent:
+- execution_mode:
+- delegation_error:
+
 ## Project Shape
 
 ## Tech Stack
@@ -29,4 +34,3 @@ Rules:
 - Prefer concrete file paths over broad summaries.
 - Keep discovery bounded to the clarified task.
 - If context is insufficient, state exactly what is missing and mark the phase `error` or `waiting_user` in state.
-

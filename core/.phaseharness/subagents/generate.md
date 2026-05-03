@@ -7,6 +7,11 @@ Write or append `.phaseharness/runs/<run-id>/artifacts/04-generate.md` with:
 ```markdown
 # Phase 4: Generate
 
+## Executor
+- requested_subagent:
+- execution_mode:
+- delegation_error:
+
 ## Phase <id>: <name>
 
 ### Status

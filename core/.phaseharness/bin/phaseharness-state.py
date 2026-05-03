@@ -135,7 +135,7 @@ def initial_state(
         "current_phase": "clarify",
         "phase_order": PHASE_ORDER,
         "attempts": {
-            "clarify": 1,
+            "clarify": 0,
             "context_gather": 0,
             "plan": 0,
             "generate": 0,
@@ -177,14 +177,14 @@ def initial_state(
             "dirty_paths": git_dirty_paths(root),
         },
         "inflight": {
-            "phase": "clarify",
+            "phase": None,
             "session_id": None,
             "turn_id": None,
-            "started_at": now_iso(),
+            "started_at": None,
         },
         "phases": {
             phase: {
-                "status": "running" if phase == "clarify" else "pending",
+                "status": "pending",
                 "artifact": ARTIFACTS[phase],
             }
             for phase in PHASE_ORDER

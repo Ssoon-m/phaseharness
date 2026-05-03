@@ -92,6 +92,22 @@ provider-native subagent bridge뿐입니다.
 - `.claude/agents/phaseharness-*.md`
 - `.codex/agents/phaseharness-*.toml`
 
+## Subagent 동작
+
+Phaseharness는 provider-native subagent bridge 파일을 설치합니다. Provider
+hook은 shell command로 실행되므로 hook 자체가 provider subagent API를 호출할
+수는 없습니다. 대신 Stop hook이 반환하는 continuation prompt의 첫 필수 동작을
+phase별 subagent 직접 호출로 고정합니다.
+
+- Claude Code: `phaseharness-clarify`, `phaseharness-context-gather`,
+  `phaseharness-plan`, `phaseharness-generate`, `phaseharness-evaluate`
+- Codex: `phaseharness_clarify`, `phaseharness_context_gather`,
+  `phaseharness_plan`, `phaseharness_generate`, `phaseharness_evaluate`
+
+Parent conversation은 phase 작업을 직접 수행하지 않습니다. provider가
+Stop-hook continuation에서 subagent를 실행할 수 없으면 local fallback을 하지
+않고 `subagent_unavailable` 오류로 run을 `waiting_user` 상태로 둡니다.
+
 ## 개발
 
 로컬 검증:

@@ -58,3 +58,15 @@ Runtime provider bridge targets:
 ```
 
 The installer rewrites these bridge files from the canonical prompts.
+
+The Stop hook does not invoke provider subagent APIs directly because hooks run
+as shell commands. Each continuation prompt makes the matching provider
+subagent call the parent agent's first required action:
+
+- Claude Code subagents use hyphenated names such as
+  `phaseharness-context-gather`.
+- Codex custom agents use underscored names such as
+  `phaseharness_context_gather`.
+- If the provider does not launch the subagent, the parent agent must not
+  execute the phase locally. It records `subagent_unavailable` and sets the
+  phase to `waiting_user`.

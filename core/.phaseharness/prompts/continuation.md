@@ -9,9 +9,22 @@ Required artifact: `{{ARTIFACT_PATH}}`
 Loop: `{{LOOP_CURRENT}}` of `{{LOOP_COUNT}}`
 Attempt: `{{ATTEMPT}}` of `{{MAX_ATTEMPTS_PER_PHASE}}`
 Commit mode: `{{COMMIT_MODE}}`
+Claude subagent: `{{CLAUDE_SUBAGENT}}`
+Codex subagent: `{{CODEX_SUBAGENT}}`
 Implementation phase: `{{IMPLEMENTATION_PHASE}}`
 Implementation phase file: `{{IMPLEMENTATION_PHASE_PATH}}`
 Resume summary: {{RESUME_SUMMARY}}
+
+## Mandatory Subagent Call
+
+- Do not execute this phase in the parent conversation.
+- Your first action must be to invoke exactly one provider-native phaseharness subagent for this phase.
+- Codex: directly spawn exactly one custom agent named `{{CODEX_SUBAGENT}}`, wait for it to finish, then report its result. Do not spawn multiple agents for the same phase.
+- Claude Code: directly invoke the `{{CLAUDE_SUBAGENT}}` subagent, wait for it to finish, then report its result.
+- Pass the run id, current phase, state file, required artifact, loop values, commit mode, implementation phase, and implementation phase file to the subagent.
+- After the subagent returns, the parent conversation may only inspect the required artifact and state file, summarize the subagent result, and stop. Do not complete phase work in the parent conversation.
+- If the provider cannot invoke the subagent, create or append the required artifact with an `## Executor` section, set this phase to `waiting_user` with an error message that starts with `subagent_unavailable`, and stop.
+- The required artifact must include an `## Executor` section with `requested_subagent`, `execution_mode`, and `delegation_error`.
 
 ## Rules
 

@@ -17,31 +17,31 @@ SUBAGENTS = {
         "file": "clarify.md",
         "claude_name": "phaseharness-clarify",
         "codex_name": "phaseharness_clarify",
-        "description": "Use for the phaseharness clarify phase when an active phaseharness run needs an execution contract.",
+        "description": "Use proactively for the phaseharness clarify phase when an active phaseharness run needs an execution contract.",
     },
     "context-gather": {
         "file": "context-gather.md",
         "claude_name": "phaseharness-context-gather",
         "codex_name": "phaseharness_context_gather",
-        "description": "Use for the phaseharness context gather phase to inspect repository facts without implementing.",
+        "description": "Use proactively for the phaseharness context gather phase to inspect repository facts without implementing.",
     },
     "plan": {
         "file": "plan.md",
         "claude_name": "phaseharness-plan",
         "codex_name": "phaseharness_plan",
-        "description": "Use for the phaseharness plan phase to create implementation phase files and acceptance criteria.",
+        "description": "Use proactively for the phaseharness plan phase to create implementation phase files and acceptance criteria.",
     },
     "generate": {
         "file": "generate.md",
         "claude_name": "phaseharness-generate",
         "codex_name": "phaseharness_generate",
-        "description": "Use for the phaseharness generate phase to implement exactly one queued implementation phase.",
+        "description": "Use proactively for the phaseharness generate phase to implement exactly one queued implementation phase.",
     },
     "evaluate": {
         "file": "evaluate.md",
         "claude_name": "phaseharness-evaluate",
         "codex_name": "phaseharness_evaluate",
-        "description": "Use for the phaseharness evaluate phase to verify the run and queue follow-up phases on failure.",
+        "description": "Use proactively for the phaseharness evaluate phase to verify the run and queue follow-up phases on failure.",
     },
 }
 

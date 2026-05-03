@@ -166,6 +166,13 @@ The installer generates provider-native subagent bridge files from
 - Claude Code project subagents: `.claude/agents/*.md`
 - Codex project custom agents: `.codex/agents/*.toml`
 
+The Stop hook cannot call provider subagent APIs itself because provider hooks
+run as shell commands. Instead, the continuation prompt must make the direct
+phase-specific subagent call the parent agent's first required action. If
+subagent launch is unavailable from the Stop-hook continuation, the parent agent
+must not execute the phase locally; it must set the phase to `waiting_user` with
+a `subagent_unavailable` error.
+
 The installer must preserve user hooks:
 
 - If `.claude/settings.json` already has hooks, keep them and add only the

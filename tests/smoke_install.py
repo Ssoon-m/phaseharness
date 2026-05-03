@@ -162,8 +162,18 @@ def assert_native_subagents(target: Path) -> None:
             raise SystemExit(f"invalid Claude subagent frontmatter: {claude_path.relative_to(target)}")
         if "developer_instructions" not in codex_text or "name = " not in codex_text:
             raise SystemExit(f"invalid Codex subagent TOML: {codex_path.relative_to(target)}")
+        if "Use proactively" not in claude_text or "Use proactively" not in codex_text:
+            raise SystemExit(f"subagent description should encourage delegation: {claude_path.relative_to(target)}")
     if "phaseharness_generate" not in (codex_agents / "phaseharness-generate.toml").read_text():
         raise SystemExit("Codex generate subagent name was not written")
+
+
+def assert_skill_starts_with_hooked_clarify(target: Path) -> None:
+    text = (target / ".phaseharness" / "skills" / "phaseharness" / "SKILL.md").read_text()
+    if "Do not perform `clarify` in the current conversation." not in text:
+        raise SystemExit("phaseharness skill should leave clarify to the Stop hook")
+    if "continue\n   with `clarify`" not in text:
+        raise SystemExit("phaseharness skill should document hooked clarify startup")
 
 
 def hook_input(target: Path, session_id: str, turn_id: str) -> str:
@@ -201,6 +211,35 @@ def assert_start_requires_choices(target: Path) -> None:
         raise SystemExit("start should require explicit loop count, max attempts per phase, and commit mode")
 
 
+def assert_new_run_starts_before_clarify(target: Path) -> None:
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"], target)
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "verify hooked clarify startup",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "2",
+            "--commit-mode",
+            "none",
+        ],
+        target,
+    )
+    run_id = result.stdout.strip()
+    state = json.loads((target / ".phaseharness" / "runs" / run_id / "state.json").read_text())
+    if state.get("attempts", {}).get("clarify") != 0:
+        raise SystemExit("new runs should not pre-consume a clarify attempt")
+    if state.get("phases", {}).get("clarify", {}).get("status") != "pending":
+        raise SystemExit("new runs should leave clarify pending for the Stop hook")
+    if state.get("inflight", {}).get("phase") is not None:
+        raise SystemExit("new runs should not mark clarify inflight before the Stop hook")
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"], target)
+
+
 def assert_hook_activation_and_resume(target: Path) -> None:
     result = run(
         [
@@ -227,12 +266,20 @@ def assert_hook_activation_and_resume(target: Path) -> None:
     first_json = json.loads(first.stdout)
     if first_json.get("decision") != "block" or "context_gather" not in first_json.get("reason", ""):
         raise SystemExit("active run did not continue to context_gather")
+    if "Do not execute this phase in the parent conversation." not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt should prohibit parent phase execution")
     if "Loop: `1` of `2`" not in first_json.get("reason", ""):
         raise SystemExit("continuation prompt did not include loop count")
     if "Attempt: `1` of `3`" not in first_json.get("reason", ""):
         raise SystemExit("continuation prompt did not include max attempts per phase")
     if "Commit mode: `none`" not in first_json.get("reason", ""):
         raise SystemExit("continuation prompt did not include commit mode")
+    if "Codex: directly spawn exactly one custom agent named `phaseharness_context_gather`" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not request the Codex subagent")
+    if "Claude Code: directly invoke the `phaseharness-context-gather` subagent" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not request the Claude subagent")
+    if "subagent_unavailable" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not define subagent unavailable handling")
 
     other_session = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s2", "t2"))
     if json.loads(other_session.stdout).get("continue") is not True:
@@ -324,6 +371,8 @@ def assert_full_workflow(target: Path) -> None:
     first = continue_hook(target, "workflow-session", "wf-1")
     if "clarify" not in first:
         raise SystemExit("running clarify should continue clarify until state marks it completed")
+    if "Codex: directly spawn exactly one custom agent named `phaseharness_clarify`" not in first:
+        raise SystemExit("clarify prompt did not request the Codex clarify subagent")
 
     prompt = complete_phase(target, run_id, "clarify", "artifacts/01-clarify.md", "# Phase 1\nDone\n", "wf-2")
     if "context_gather" not in prompt:
@@ -564,6 +613,7 @@ def main() -> int:
         assert_hook_merge(target)
         assert_no_legacy_paths(target)
         assert_native_subagents(target)
+        assert_skill_starts_with_hooked_clarify(target)
 
         expected = [
             ".phaseharness/bin/phaseharness-hook.py",
@@ -584,6 +634,7 @@ def main() -> int:
 
         assert_hook_noop(target)
         assert_start_requires_choices(target)
+        assert_new_run_starts_before_clarify(target)
         assert_hook_activation_and_resume(target)
         assert_same_turn_id_advances_between_phases(target)
         assert_full_workflow(target)

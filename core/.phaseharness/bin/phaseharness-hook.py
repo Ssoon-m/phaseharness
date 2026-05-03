@@ -24,6 +24,20 @@ SUBAGENT_FILES = {
     "generate": "generate.md",
     "evaluate": "evaluate.md",
 }
+CLAUDE_SUBAGENTS = {
+    "clarify": "phaseharness-clarify",
+    "context_gather": "phaseharness-context-gather",
+    "plan": "phaseharness-plan",
+    "generate": "phaseharness-generate",
+    "evaluate": "phaseharness-evaluate",
+}
+CODEX_SUBAGENTS = {
+    "clarify": "phaseharness_clarify",
+    "context_gather": "phaseharness_context_gather",
+    "plan": "phaseharness_plan",
+    "generate": "phaseharness_generate",
+    "evaluate": "phaseharness_evaluate",
+}
 DEFAULT_GENERATE_STATE = {
     "queue": [],
     "current_phase": None,
@@ -178,6 +192,8 @@ def build_prompt(root: Path, run_dir: Path, state: dict[str, Any], phase: str) -
         .replace("{{LOOP_CURRENT}}", str(loop_current(state)))
         .replace("{{LOOP_COUNT}}", str(loop_max(state)))
         .replace("{{COMMIT_MODE}}", str(state.get("commit_mode", "none")))
+        .replace("{{CLAUDE_SUBAGENT}}", CLAUDE_SUBAGENTS.get(phase, "none"))
+        .replace("{{CODEX_SUBAGENT}}", CODEX_SUBAGENTS.get(phase, "none"))
         .replace("{{IMPLEMENTATION_PHASE}}", impl_phase or "none")
         .replace("{{IMPLEMENTATION_PHASE_PATH}}", str(impl_path.relative_to(root)) if impl_path else "none")
         .replace("{{RESUME_SUMMARY}}", resume_summary)

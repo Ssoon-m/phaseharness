@@ -9,6 +9,11 @@ Write `.phaseharness/runs/<run-id>/artifacts/03-plan.md` and one or more files u
 ```markdown
 # Phase 3: Plan
 
+## Executor
+- requested_subagent:
+- execution_mode:
+- delegation_error:
+
 ## Implementation Phases
 
 ## Acceptance Criteria

@@ -7,6 +7,11 @@ Write `.phaseharness/runs/<run-id>/artifacts/01-clarify.md` with:
 ```markdown
 # Phase 1: Clarify
 
+## Executor
+- requested_subagent:
+- execution_mode:
+- delegation_error:
+
 ## Original Request
 
 ## Clarification Questions
@@ -32,4 +37,3 @@ Rules:
 - Capture concrete user decisions so later phases do not depend on conversation memory.
 - `Done When` must be specific enough for evaluate to decide pass, warn, or fail.
 - Prefer the smallest useful increment when scope is broad.
-

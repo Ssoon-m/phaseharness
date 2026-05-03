@@ -88,12 +88,10 @@ python3 .phaseharness/bin/phaseharness-state.py start --request "<request>" --lo
 ```
 
 9. Use the printed run id as `<run-id>`.
-10. Perform `clarify` in the current conversation.
-11. Write `.phaseharness/runs/<run-id>/artifacts/01-clarify.md`.
-12. Update `.phaseharness/runs/<run-id>/state.json` so `clarify` is
-   `completed`.
-13. Stop normally. The project `Stop` hook will read the files and continue with
-   `context_gather`.
+10. Do not perform `clarify` in the current conversation.
+11. Stop normally. The project `Stop` hook will read the active run and continue
+   with `clarify` through the provider-native phaseharness subagent when
+   supported.
 
 ## State Rules
 
