@@ -5,6 +5,9 @@ Codex must both honor.
 
 ## Activation Gate
 
+The installed `SessionStart` hook may silently resync provider bridge files from
+`.phaseharness/`, but it must not create, resume, or advance runs.
+
 The installed `Stop` hook is inert unless `.phaseharness/state/active.json`
 contains:
 

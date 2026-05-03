@@ -5,7 +5,8 @@ files.
 
 ## Claude Code
 
-Claude Code uses a project `Stop` hook entry in `.claude/settings.json`.
+Claude Code uses project `SessionStart` and `Stop` hook entries in
+`.claude/settings.json`.
 Phaseharness-managed Claude settings are generated from
 `.phaseharness/config.toml` `[permissions.claude.settings.permissions]`.
 Claude subagent frontmatter is generated from `[permissions.claude.subagents]`.
@@ -65,6 +66,8 @@ No-op output:
 
 ## Shared Rules
 
+- `SessionStart` hooks may only resync provider bridge files from
+  `.phaseharness/`; they must not create, resume, or advance runs.
 - Hooks must read file state before continuing.
 - Hooks must not create active runs.
 - Hooks must not continue while `needs_user` is true.

@@ -3,15 +3,16 @@
 Installable `phaseharness` workflow for Claude Code and Codex.
 
 This repository ships a canonical harness that is copied into a target
-repository under `.phaseharness/`. The installed harness uses provider `Stop`
-hooks and durable files to continue a task through:
+repository under `.phaseharness/`. The installed harness uses provider
+`SessionStart` hooks to resync bridge files and provider `Stop` hooks plus
+durable files to continue a task through:
 
 ```text
 clarify -> context gather -> plan -> generate -> evaluate
 ```
 
-The hook is installed at the provider configuration layer, but it is inert by
-default. It continues work only after the user explicitly invokes the
+The Stop hook is installed at the provider configuration layer, but it is inert
+by default. It continues work only after the user explicitly invokes the
 `phaseharness` skill and that skill creates an active run file.
 
 ## Install
@@ -24,8 +25,9 @@ https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 ```
 
 The installer copies `core/.phaseharness/` into the target repository, installs
-Claude/Codex `Stop` hook entries, exposes the `phaseharness` skill, generates
-provider-native subagent bridge files, and runs smoke verification.
+Claude/Codex `SessionStart` and `Stop` hook entries, exposes the
+`phaseharness` skill, generates provider-native subagent bridge files, and runs
+smoke verification.
 
 ## Run A Task
 
@@ -75,7 +77,7 @@ session do not restart the loop.
 
 All canonical harness files and runtime state live under `.phaseharness/`:
 
-- `.phaseharness/bin/`: state, hook, install, and commit helpers
+- `.phaseharness/bin/`: state, hook, bridge sync, and commit helpers
 - `.phaseharness/hooks/`: provider hook wrappers
 - `.phaseharness/skills/phaseharness/`: skill instructions
 - `.phaseharness/subagents/`: phase-specific subagent instructions
@@ -88,6 +90,11 @@ SSOT:
 ```bash
 python3 .phaseharness/bin/phaseharness-sync-bridges.py
 ```
+
+The installed `SessionStart` hook runs the same bridge sync silently at session
+startup/resume, so edits to `.phaseharness/subagents/*.md`,
+`.phaseharness/skills/phaseharness/`, or `.phaseharness/config.toml` are
+reflected in provider bridge files before the session starts handling prompts.
 
 Provider-required files outside `.phaseharness/` are limited to managed hook
 entries, skill symlinks, and provider-native subagent bridge files:
@@ -135,8 +142,8 @@ These settings are intentionally broad. Install phaseharness only into
 repositories where the provider is allowed to edit and run project commands
 without repeated approval prompts.
 After installation, users may lower these permission settings in
-`.phaseharness/config.toml` and rerun the installer if they prefer more approval
-prompts.
+`.phaseharness/config.toml` and rerun the bridge sync command if they prefer
+more approval prompts.
 
 ## Development
 

@@ -193,12 +193,15 @@ def yaml_frontmatter_value(value: Any) -> str:
     return str(value)
 
 
-def command_for(runtime: str) -> str:
+def command_for(runtime: str, event: str) -> str:
+    if event not in ("stop", "session-start"):
+        raise ValueError(event)
+    script = f"{runtime}-{event}.sh"
     if runtime == "claude":
         return (
             "sh -c 'd=\"${CLAUDE_PROJECT_DIR:-$PWD}\"; "
             "while [ \"$d\" != \"/\" ]; do "
-            "f=\"$d/.phaseharness/hooks/claude-stop.sh\"; "
+            f"f=\"$d/.phaseharness/hooks/{script}\"; "
             "if [ -x \"$f\" ]; then exec \"$f\"; fi; "
             "d=\"$(dirname \"$d\")\"; "
             "done; exit 0'"
@@ -206,19 +209,21 @@ def command_for(runtime: str) -> str:
     if runtime == "codex":
         return (
             "sh -c 'root=\"$(git rev-parse --show-toplevel 2>/dev/null || pwd)\"; "
-            "exec python3 \"$root/.phaseharness/bin/phaseharness-hook.py\" --runtime codex'"
+            f"exec \"$root/.phaseharness/hooks/{script}\"'"
         )
     raise ValueError(runtime)
 
 
-def hook_entry(runtime: str, config: dict[str, Any]) -> dict[str, Any]:
+def hook_entry(runtime: str, event: str, config: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "type": "command",
-        "command": command_for(runtime),
+        "command": command_for(runtime, event),
         "timeout": config_int(config, 30, "hooks", "timeout_sec"),
     }
-    if runtime == "codex":
+    if runtime == "codex" and event == "stop":
         entry["statusMessage"] = "Checking phaseharness state"
+    if runtime == "codex" and event == "session-start":
+        entry["statusMessage"] = "Syncing phaseharness bridges"
     return entry
 
 
@@ -226,27 +231,32 @@ def command_is_phaseharness(value: Any) -> bool:
     return isinstance(value, dict) and HOOK_MARKER in str(value.get("command", ""))
 
 
-def merge_stop_hook(data: dict[str, Any], entry: dict[str, Any]) -> None:
+def merge_hook(data: dict[str, Any], event: str, matcher: str, entry: dict[str, Any]) -> None:
     hooks_root = data.setdefault("hooks", {})
     if not isinstance(hooks_root, dict):
         raise RuntimeError("hooks must be an object")
-    groups = hooks_root.setdefault("Stop", [])
+    groups = hooks_root.setdefault(event, [])
     if not isinstance(groups, list):
-        raise RuntimeError("hooks.Stop must be a list")
+        raise RuntimeError(f"hooks.{event} must be a list")
 
     target: dict[str, Any] | None = None
     for group in groups:
-        if isinstance(group, dict) and str(group.get("matcher", "")) == "":
+        if not isinstance(group, dict):
+            continue
+        existing_entries = group.get("hooks", [])
+        if isinstance(existing_entries, list):
+            existing_entries[:] = [item for item in existing_entries if not command_is_phaseharness(item)]
+        if str(group.get("matcher", "")) == matcher:
             target = group
-            break
     if target is None:
         target = {"hooks": []}
+        if matcher:
+            target["matcher"] = matcher
         groups.append(target)
 
     entries = target.setdefault("hooks", [])
     if not isinstance(entries, list):
-        raise RuntimeError("hooks.Stop[].hooks must be a list")
-    entries[:] = [item for item in entries if not command_is_phaseharness(item)]
+        raise RuntimeError(f"hooks.{event}[].hooks must be a list")
     entries.append(entry)
 
 
@@ -271,9 +281,11 @@ def ensure_claude_permissions(data: dict[str, Any], config: dict[str, Any]) -> N
 
 def install_claude_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     make_executable(root / ".phaseharness" / "hooks" / "claude-stop.sh")
+    make_executable(root / ".phaseharness" / "hooks" / "claude-session-start.sh")
     settings_path = root / ".claude" / "settings.json"
     data = load_json_object(settings_path)
-    merge_stop_hook(data, hook_entry("claude", config))
+    merge_hook(data, "SessionStart", "startup|resume|clear|compact", hook_entry("claude", "session-start", config))
+    merge_hook(data, "Stop", "", hook_entry("claude", "stop", config))
     ensure_claude_permissions(data, config)
     write_json(settings_path, data)
     return [settings_path]
@@ -373,13 +385,22 @@ def ensure_codex_permissions(config_path: Path, config: dict[str, Any]) -> None:
 def append_codex_inline_hook(config_path: Path, config: dict[str, Any]) -> None:
     text = config_path.read_text() if config_path.exists() else ""
     text = remove_managed_toml_block(text)
-    command = command_for("codex")
+    session_start_command = command_for("codex", "session-start")
+    stop_command = command_for("codex", "stop")
     block = f"""
 # BEGIN phaseharness managed hook
+[[hooks.SessionStart]]
+matcher = "startup|resume|clear"
+[[hooks.SessionStart.hooks]]
+type = "command"
+command = {toml_string(session_start_command)}
+timeout = {config_int(config, 30, "hooks", "timeout_sec")}
+statusMessage = "Syncing phaseharness bridges"
+
 [[hooks.Stop]]
 [[hooks.Stop.hooks]]
 type = "command"
-command = {toml_string(command)}
+command = {toml_string(stop_command)}
 timeout = {config_int(config, 30, "hooks", "timeout_sec")}
 statusMessage = "Checking phaseharness state"
 # END phaseharness managed hook
@@ -389,6 +410,7 @@ statusMessage = "Checking phaseharness state"
 
 def install_codex_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     make_executable(root / ".phaseharness" / "hooks" / "codex-stop.sh")
+    make_executable(root / ".phaseharness" / "hooks" / "codex-session-start.sh")
     config_path = root / ".codex" / "config.toml"
     hooks_path = root / ".codex" / "hooks.json"
     ensure_codex_feature_flag(config_path)
@@ -397,7 +419,8 @@ def install_codex_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
 
     if hooks_path.exists() or not has_inline_codex_hooks(config_path):
         data = load_json_object(hooks_path)
-        merge_stop_hook(data, hook_entry("codex", config))
+        merge_hook(data, "SessionStart", "startup|resume|clear", hook_entry("codex", "session-start", config))
+        merge_hook(data, "Stop", "", hook_entry("codex", "stop", config))
         write_json(hooks_path, data)
         changed.append(hooks_path)
         return changed
@@ -528,6 +551,7 @@ def main() -> int:
     parser.add_argument("--runtime", choices=["all", "claude", "codex"], default="all")
     parser.add_argument("--skip-skills", action="store_true")
     parser.add_argument("--skip-subagents", action="store_true")
+    parser.add_argument("--quiet", action="store_true", help="suppress changed-path output")
     args = parser.parse_args()
 
     root = find_project_root()
@@ -542,8 +566,9 @@ def main() -> int:
     if not args.skip_subagents:
         changed.extend(install_subagent_bridges(root, args.runtime, config))
 
-    for path in changed:
-        print(path.relative_to(root))
+    if not args.quiet:
+        for path in changed:
+            print(path.relative_to(root))
     return 0
 
 

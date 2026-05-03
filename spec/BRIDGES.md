@@ -5,11 +5,11 @@ Phaseharness keeps canonical files under `.phaseharness/`.
 Provider-required bridge files outside that directory are limited to runtime
 integration, permission, and bridge files:
 
-- `.claude/settings.json`: project `Stop` hook entry and phaseharness
+- `.claude/settings.json`: project `SessionStart`/`Stop` hook entries and phaseharness
   permission settings
 - `.codex/config.toml`: `codex_hooks = true` and phaseharness permission
   settings
-- `.codex/hooks.json` or inline Codex hook entry
+- `.codex/hooks.json` or inline Codex `SessionStart`/`Stop` hook entries
 - `.claude/skills/phaseharness`: symlink or copy to the canonical skill
 - `.agents/skills/phaseharness`: symlink or copy to the canonical skill
 - `.claude/agents/phaseharness-*.md`: Claude Code project subagents generated from canonical subagent prompts
@@ -27,10 +27,12 @@ It reads `.phaseharness/config.toml`, `.phaseharness/subagents/`, and
 The bridge sync command must:
 
 - preserve existing user hooks
-- add or replace only entries whose command contains `phaseharness-hook.py`
+- add or replace only entries whose command contains `.phaseharness`
 - preserve existing Codex inline hooks when no `hooks.json` exists
 - enable `codex_hooks = true`
 - stop on invalid JSON instead of guessing
+- install `SessionStart` only for bridge sync; install `Stop` only for workflow
+  continuation
 
 ## Skill Bridge
 
@@ -64,11 +66,12 @@ Runtime provider bridge targets:
 .codex/agents/phaseharness-*.toml
 ```
 
-The installer rewrites these bridge files from the canonical prompts.
+The bridge sync command rewrites these bridge files from the canonical prompts.
 
-The Stop hook does not invoke provider subagent APIs directly because hooks run
-as shell commands. Each continuation prompt makes the matching provider
-subagent call the parent agent's first required action:
+The SessionStart hook silently regenerates provider-native bridge files from the
+canonical prompts. The Stop hook does not invoke provider subagent APIs directly
+because hooks run as shell commands. Each continuation prompt makes the matching
+provider subagent call the parent agent's first required action:
 
 - Claude Code subagents use hyphenated names such as
   `phaseharness-context-gather`.

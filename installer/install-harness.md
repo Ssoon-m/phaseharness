@@ -63,9 +63,9 @@ Dirty worktree is allowed, but do not overwrite unrelated user changes.
 Phaseharness-owned target paths:
 
 - `.phaseharness/`
-- `.claude/settings.json` phaseharness `Stop` hook entry and managed permissions
+- `.claude/settings.json` phaseharness `SessionStart`/`Stop` hook entries and managed permissions
 - `.codex/config.toml` `codex_hooks` flag, phaseharness inline hook block, and managed permissions
-- `.codex/hooks.json` phaseharness `Stop` hook entry
+- `.codex/hooks.json` phaseharness `SessionStart`/`Stop` hook entries
 - `.claude/skills/phaseharness`
 - `.agents/skills/phaseharness`
 - `.claude/agents/phaseharness-*.md`
@@ -139,7 +139,7 @@ If `.phaseharness/state/index.json` is missing, create it:
 Do not activate a run during installation. The loop activates only when the user
 explicitly invokes the `phaseharness` skill.
 
-## 5. Install Stop Hooks And Skill Bridges
+## 5. Install SessionStart/Stop Hooks And Skill Bridges
 
 Run:
 
@@ -167,6 +167,12 @@ The installer generates provider-native subagent bridge files from
 - Claude Code project subagents: `.claude/agents/*.md`
 - Codex project custom agents: `.codex/agents/*.toml`
 
+The SessionStart hook must only resync provider bridge files from
+`.phaseharness/`. It must not create, resume, or advance runs. This keeps
+`.phaseharness/subagents/*.md`, `.phaseharness/skills/phaseharness/`, and
+`.phaseharness/config.toml` as the SSOT while avoiding loop activation for
+normal sessions.
+
 The Stop hook cannot call provider subagent APIs itself because provider hooks
 run as shell commands. Instead, the continuation prompt must make the direct
 phase-specific subagent call the parent agent's first required action. If
@@ -186,16 +192,17 @@ tables should follow provider-native key names where practical:
   `sandbox_workspace_write.*`.
 
 Users may lower these permissions in `.phaseharness/config.toml` after
-installation and rerun the installer if they prefer more approval prompts.
+installation and rerun the bridge sync command if they prefer more approval
+prompts.
 
 The installer must preserve user hooks:
 
 - If `.claude/settings.json` already has hooks, keep them and add only the
-  phaseharness `Stop` hook entry.
+  phaseharness `SessionStart` and `Stop` hook entries.
 - If `.codex/hooks.json` already exists, keep it and add only the phaseharness
-  `Stop` hook entry.
+  `SessionStart` and `Stop` hook entries.
 - If `.codex/config.toml` already uses inline hooks and `.codex/hooks.json` is
-  absent, append one managed phaseharness `Stop` hook block there.
+  absent, append one managed phaseharness `SessionStart`/`Stop` hook block there.
 - If existing hook JSON is invalid, stop and ask the user before editing it.
 
 Codex requires:
@@ -243,12 +250,14 @@ command -v codex || true
 Optional hook no-op checks:
 
 ```bash
+printf '{"cwd":"%s","hook_event_name":"SessionStart","source":"startup"}' "$PWD" | .phaseharness/hooks/claude-session-start.sh
+printf '{"cwd":"%s","hook_event_name":"SessionStart","source":"startup"}' "$PWD" | .phaseharness/hooks/codex-session-start.sh
 printf '{"cwd":"%s","hook_event_name":"Stop","stop_hook_active":false}' "$PWD" | .phaseharness/hooks/claude-stop.sh
 printf '{"cwd":"%s","hook_event_name":"Stop","stop_hook_active":false}' "$PWD" | .phaseharness/hooks/codex-stop.sh
 ```
 
-Claude no-op should produce no output. Codex no-op should produce JSON with
-`continue: true`.
+SessionStart no-op should produce no output. Claude Stop no-op should produce
+no output. Codex Stop no-op should produce JSON with `continue: true`.
 
 ## 8. Final Report
 
@@ -260,9 +269,9 @@ https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 
 Created/updated:
 - .phaseharness/
-- .claude/settings.json phaseharness Stop hook entry
+- .claude/settings.json phaseharness SessionStart/Stop hook entries
 - .codex/config.toml codex_hooks flag
-- .codex/hooks.json or inline Codex Stop hook entry
+- .codex/hooks.json or inline Codex SessionStart/Stop hook entry
 - .claude/skills/phaseharness
 - .agents/skills/phaseharness
 - .claude/agents/phaseharness-*.md
@@ -270,6 +279,7 @@ Created/updated:
 
 Key install details:
 - All canonical harness files live under .phaseharness/
+- SessionStart hooks silently resync provider bridges from .phaseharness/
 - Stop hooks are inert until the phaseharness skill creates an active run
 - Provider-native subagent bridge files were generated from .phaseharness/subagents/
 - The skill asks for loop count, max attempts per phase, and commit mode before

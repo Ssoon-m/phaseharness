@@ -7,7 +7,7 @@ The goal is to provide:
 
 - one canonical target-directory root: `.phaseharness/`
 - stable file state for five-phase repository work
-- provider `Stop` hook continuation
+- provider `SessionStart` bridge sync and `Stop` hook continuation
 - explicit activation through the `phaseharness` skill
 - explicit resume through the `phaseharness` skill after session interruption
 - no loop activation for ordinary prompts
@@ -20,10 +20,11 @@ The goal is to provide:
 2. The user gives the session `installer/install-harness.md`.
 3. The agent copies this repository's `core/.phaseharness/` into the target
    repository.
-4. The installer adds provider `Stop` hook entries and skill bridges.
+4. The installer adds provider `SessionStart`/`Stop` hook entries and skill bridges.
 5. The user explicitly invokes the `phaseharness` skill for a concrete task.
 6. The skill creates an active run file.
-7. `Stop` hooks continue the run through clarify, context gather, plan,
+7. `SessionStart` hooks resync provider bridge files; `Stop` hooks continue
+   the run through clarify, context gather, plan,
    implementation phase generation, and evaluate.
 8. If evaluate fails and follow-up phase files exist within `loop_count`, the
    hook returns to generate for the next implementation phase queue.

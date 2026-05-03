@@ -16,6 +16,9 @@ contract; phase state and artifacts are.
 
 ## 2. Activation
 
+The installed `SessionStart` hooks are allowed to resync provider bridge files
+from `.phaseharness/`. They must not create, resume, or advance runs.
+
 The installed `Stop` hooks are always allowed to run, but the loop is disabled
 by default.
 
@@ -100,11 +103,13 @@ Target repository after install:
     .gitignore
     bin/
       phaseharness-hook.py
-      phaseharness-install-hooks.py
+      phaseharness-sync-bridges.py
       phaseharness-state.py
       commit-result.py
     hooks/
+      claude-session-start.sh
       claude-stop.sh
+      codex-session-start.sh
       codex-stop.sh
     skills/
       phaseharness/
@@ -129,10 +134,17 @@ They are not canonical harness source.
 
 ## 5. Hook Contract
 
-Claude Code and Codex both use a `Stop` hook to decide whether the agent should
-continue.
+Claude Code and Codex both use a `SessionStart` hook to resync provider bridge
+files and a `Stop` hook to decide whether the agent should continue.
 
-The hook:
+The SessionStart hook:
+
+- reads `.phaseharness/config.toml`, `.phaseharness/subagents/`, and the
+  canonical skill
+- regenerates provider hook, skill, and subagent bridge files silently
+- does not create or continue workflow runs
+
+The Stop hook:
 
 - reads stdin JSON from the provider
 - finds `.phaseharness/`

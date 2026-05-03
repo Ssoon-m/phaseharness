@@ -52,7 +52,7 @@ def init_state(target: Path) -> None:
 def install_fixture(target: Path) -> None:
     copy_phaseharness(target)
     init_state(target)
-    run(["chmod", "+x", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-sync-bridges.py", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/commit-result.py", ".phaseharness/hooks/claude-stop.sh", ".phaseharness/hooks/codex-stop.sh"], target)
+    run(["chmod", "+x", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-sync-bridges.py", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/commit-result.py", ".phaseharness/hooks/claude-stop.sh", ".phaseharness/hooks/codex-stop.sh", ".phaseharness/hooks/claude-session-start.sh", ".phaseharness/hooks/codex-session-start.sh"], target)
 
 
 def write_existing_hooks(target: Path) -> None:
@@ -101,9 +101,17 @@ def assert_hook_merge(target: Path) -> None:
         raise SystemExit("existing Claude hook was not preserved")
     if "existing-codex-hook" not in codex_text:
         raise SystemExit("existing Codex hook was not preserved")
-    if claude_text.count(".phaseharness") != 1:
+    if "SessionStart" not in claude.get("hooks", {}) or "Stop" not in claude.get("hooks", {}):
+        raise SystemExit("Claude SessionStart and Stop hooks were not installed")
+    if "SessionStart" not in codex.get("hooks", {}) or "Stop" not in codex.get("hooks", {}):
+        raise SystemExit("Codex SessionStart and Stop hooks were not installed")
+    if "startup|resume|clear|compact" not in claude_text:
+        raise SystemExit("Claude SessionStart matcher was not installed")
+    if "startup|resume|clear" not in codex_text:
+        raise SystemExit("Codex SessionStart matcher was not installed")
+    if claude_text.count(".phaseharness") != 2:
         raise SystemExit("Claude phaseharness hook was not installed idempotently")
-    if codex_text.count(".phaseharness") != 1:
+    if codex_text.count(".phaseharness") != 2:
         raise SystemExit("Codex phaseharness hook was not installed idempotently")
     permissions = claude.get("permissions", {})
     if permissions.get("defaultMode") != "bypassPermissions":
@@ -150,6 +158,8 @@ def assert_inline_codex_merge(tmp: Path) -> None:
         raise SystemExit("inline Codex workspace-write sandbox settings were not generated")
     if config.count("# BEGIN phaseharness managed hook") != 1:
         raise SystemExit("inline Codex phaseharness hook block was not installed once")
+    if "[[hooks.SessionStart]]" not in config or "[[hooks.Stop]]" not in config:
+        raise SystemExit("inline Codex SessionStart and Stop hooks were not installed")
     if (target / ".codex" / "hooks.json").exists():
         raise SystemExit("inline-only Codex hook install should not create hooks.json")
 
@@ -253,6 +263,19 @@ def hook_input(target: Path, session_id: str, turn_id: str) -> str:
     )
 
 
+def session_start_input(target: Path, session_id: str = "session-start", source: str = "startup") -> str:
+    return json.dumps(
+        {
+            "cwd": str(target),
+            "hook_event_name": "SessionStart",
+            "session_id": session_id,
+            "source": source,
+            "transcript_path": str(target / ".tmp-transcript.jsonl"),
+            "model": "test-model",
+        }
+    )
+
+
 def assert_hook_noop(target: Path) -> None:
     claude = run(["sh", ".phaseharness/hooks/claude-stop.sh"], target, hook_input(target, "s0", "t0"))
     if claude.stdout.strip():
@@ -260,6 +283,23 @@ def assert_hook_noop(target: Path) -> None:
     codex = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s0", "t0"))
     if json.loads(codex.stdout).get("continue") is not True:
         raise SystemExit("Codex no-op should return continue true")
+
+
+def assert_session_start_syncs_bridges(target: Path) -> None:
+    clarify_source = target / ".phaseharness" / "subagents" / "clarify.md"
+    clarify_source.write_text(clarify_source.read_text() + "\nSessionStart Claude sync marker.\n")
+    claude = run(["sh", ".phaseharness/hooks/claude-session-start.sh"], target, session_start_input(target, "claude-session"))
+    if claude.stdout.strip():
+        raise SystemExit("Claude SessionStart sync should not write stdout context")
+    if "SessionStart Claude sync marker." not in (target / ".claude" / "agents" / "phaseharness-clarify.md").read_text():
+        raise SystemExit("Claude SessionStart did not resync subagent bridge from .phaseharness")
+
+    clarify_source.write_text(clarify_source.read_text() + "\nSessionStart Codex sync marker.\n")
+    codex = run(["sh", ".phaseharness/hooks/codex-session-start.sh"], target, session_start_input(target, "codex-session"))
+    if codex.stdout.strip():
+        raise SystemExit("Codex SessionStart sync should not write stdout context")
+    if "SessionStart Codex sync marker." not in (target / ".codex" / "agents" / "phaseharness-clarify.toml").read_text():
+        raise SystemExit("Codex SessionStart did not resync subagent bridge from .phaseharness")
 
 
 def assert_start_requires_choices(target: Path) -> None:
@@ -685,6 +725,8 @@ def main() -> int:
             ".phaseharness/bin/commit-result.py",
             ".phaseharness/hooks/claude-stop.sh",
             ".phaseharness/hooks/codex-stop.sh",
+            ".phaseharness/hooks/claude-session-start.sh",
+            ".phaseharness/hooks/codex-session-start.sh",
             ".phaseharness/skills/phaseharness/SKILL.md",
             ".claude/skills/phaseharness",
             ".agents/skills/phaseharness",
@@ -696,6 +738,7 @@ def main() -> int:
                 raise SystemExit(f"missing installed path: {rel}")
 
         assert_hook_noop(target)
+        assert_session_start_syncs_bridges(target)
         assert_start_requires_choices(target)
         assert_new_run_starts_before_clarify(target)
         assert_hook_activation_and_resume(target)
