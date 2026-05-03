@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "run_id": "",
+  "request": "",
+  "status": "active",
+  "activation_source": "phaseharness_skill",
+  "current_phase": "clarify",
+  "phase_order": ["clarify", "context_gather", "plan", "generate", "evaluate"],
+  "attempts": {
+    "clarify": 1,
+    "context_gather": 0,
+    "plan": 0,
+    "generate": 0,
+    "evaluate": 0
+  },
+  "loop": {
+    "current": 1,
+    "max": 2
+  },
+  "max_attempts_per_phase": 2,
+  "commit_mode": "none",
+  "commits": {},
+  "generate": {
+    "queue": [],
+    "current_phase": null,
+    "phase_attempts": {},
+    "phase_status": {},
+    "completed_phases": [],
+    "failed_phases": []
+  },
+  "needs_user": false,
+  "session": {
+    "provider": null,
+    "session_id": null,
+    "turn_id": null,
+    "transcript_path": null,
+    "model": null,
+    "updated_at": null
+  },
+  "session_history": [],
+  "resume": {
+    "status": "none",
+    "requested_at": null,
+    "summary": ""
+  },
+  "inflight": {
+    "phase": "clarify",
+    "session_id": null,
+    "turn_id": null,
+    "started_at": null
+  },
+  "phases": {
+    "clarify": {
+      "status": "running",
+      "artifact": "artifacts/01-clarify.md"
+    },
+    "context_gather": {
+      "status": "pending",
+      "artifact": "artifacts/02-context.md"
+    },
+    "plan": {
+      "status": "pending",
+      "artifact": "artifacts/03-plan.md"
+    },
+    "generate": {
+      "status": "pending",
+      "artifact": "artifacts/04-generate.md"
+    },
+    "evaluate": {
+      "status": "pending",
+      "artifact": "artifacts/05-evaluate.md"
+    }
+  },
+  "evaluation": {
+    "status": "pending"
+  }
+}

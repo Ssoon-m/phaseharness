@@ -1,4 +1,0 @@
-name = "phase-evaluate"
-description = "Checks completed work against done conditions and phase acceptance criteria, then reports pass, warn, or fail."
-tools_policy = "read-write"
-sandbox_mode = "workspace-write"

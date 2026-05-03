@@ -1,130 +1,97 @@
 # phaseloop
 
-Portable five-phase agent workflow for Claude Code and Codex.
+Installable `phaseharness` workflow for Claude Code and Codex.
 
-phaseloop installs a provider-neutral harness into a repository. It turns one
-concrete repository request into durable task state, implementation phases, and
-evaluation so the workflow does not depend on one long conversation.
+This repository ships a canonical harness that is copied into a target
+repository under `.phaseharness/`. The installed harness uses provider `Stop`
+hooks and durable files to continue a task through:
+
+```text
+clarify -> context gather -> plan -> generate -> evaluate
+```
+
+The hook is installed at the provider configuration layer, but it is inert by
+default. It continues work only after the user explicitly invokes the
+`phaseharness` skill and that skill creates an active run file.
 
 ## Install
 
 Open Claude Code or Codex in the target repository and ask:
 
 ```text
-Install phaseloop from this installer document:
+Install phaseharness from this installer document:
 https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 ```
 
-The installer copies the canonical harness, generates Claude/Codex bridges,
-creates starter project docs, initializes local task state, and runs smoke
-verification.
-
-Install from the directory that should own the workflow state. In a monorepo,
-that can be the repo root or a specific app/package directory.
+The installer copies `core/.phaseharness/` into the target repository, installs
+Claude/Codex `Stop` hook entries, exposes the `phaseharness` skill, generates
+provider-native subagent bridge files, and runs smoke verification.
 
 ## Run A Task
 
-Use the installed skill:
+Use the installed skill explicitly:
 
 ```text
-Use the phaseloop skill to implement <request> with max attempts 3 and commit mode none.
+Use the phaseharness skill to implement <request> with loop count 2, max attempts per phase 2, and commit mode none.
 ```
 
-`max attempts` controls the retry budget for each workflow session or build
-phase. `commit mode` controls whether phaseloop creates git commits.
-If either value is omitted, the skill asks once before using a default.
-Before the headless runner starts, the skill clarifies the request in the
-current conversation and records the resulting questions, decisions, and done
-conditions as the first task artifact.
+If loop count, max attempts per phase, or commit mode are omitted, the skill
+must ask once before it creates an active run. Loop count is the maximum number
+of `generate -> evaluate` cycles. Max attempts per phase is the retry budget for
+each planned implementation phase. Commit modes are `none`, `final`, and
+`phase`.
 
-To force a specific runtime, include it in the skill request, for example
-`using Claude` or `using Codex`. Otherwise phaseloop uses the configured
-default.
+## Run Options
 
-## Commit Modes
+`loop count` controls how many full build-review cycles a run can make. One
+loop means the planned implementation phases run once, then `evaluate` decides
+`pass`, `warn`, or `fail`. When `evaluate` fails and queues follow-up phase
+files, the next loop returns to `generate`. A loop count of `2` allows one
+follow-up build-review cycle after the first evaluation failure.
 
-phaseloop defaults to `none`.
+`max attempts per phase` controls retries inside each executable phase. During
+`generate`, it applies separately to every planned implementation phase such as
+`phase-001` and `phase-002`. It does not mean the whole workflow restarts.
 
-- `none`: leave changes uncommitted.
-- `final`: create one product commit after evaluation passes or warns.
-- `phase`: ask the commit skill to commit each completed generate phase using
-  phase context. Evaluation stays local and does not create an empty validation
-  commit.
+`commit mode` controls product commits:
 
-Product commits exclude phaseloop task artifacts by default. Runtime task state
-under `tasks/` stays local unless you explicitly choose to include it.
-When there are no product changes to commit, the commit step succeeds without
-creating an empty commit.
+- `none`: do not create commits automatically.
+- `phase`: commit product changes after each planned implementation phase
+  completes.
+- `final`: create one product commit after `evaluate` passes or warns.
 
-The commit script checks task completion, evaluation status, HEAD movement, and
-pre-existing dirty paths before creating a commit.
+Commit helpers exclude `.phaseharness/` runtime state and managed provider
+bridge files by default.
 
-To commit the latest completed phaseloop result manually:
+General questions, short explanations, reviews, and one-off commands do not
+activate the loop. Activation requires `.phaseharness/state/active.json` with
+`activation_source: "phaseharness_skill"`.
 
-```bash
-python3 scripts/commit-result.py
-```
-
-To commit a specific task:
-
-```bash
-python3 scripts/commit-result.py <task-dir>
-```
-
-To intentionally include phaseloop state:
-
-```bash
-python3 scripts/commit-result.py <task-dir> --include-harness-state
-```
-
-## How It Works
-
-phaseloop runs one request through five logical phases:
-
-```text
-clarify -> context gather -> plan -> generate -> evaluate
-```
-
-Phase meanings:
-
-- `clarify`: convert the request into scope, decisions, assumptions, non-goals,
-  and done conditions.
-- `context gather`: collect the repository facts needed for the clarified task:
-  relevant files, patterns, constraints, risks, and validation commands.
-- `plan`: turn the clarified task and context into ordered implementation phases
-  with concrete acceptance criteria.
-- `generate`: execute the planned phases, validate when possible, and record the
-  result without reopening clarification or planning.
-- `evaluate`: independently check the completed work against done conditions and
-  acceptance criteria, then report pass, warn, or fail.
-
-By default, phaseloop runs clarify in the current conversation so the agent can
-ask the user material questions before code is planned. It then groups context
-gather and plan into one headless analysis session, followed by separate build
-and evaluation sessions:
-
-```text
-main session: clarify
-analysis: context gather + plan
-build: planned implementation phases
-evaluate: independent verification
-```
-
-This keeps requirement ambiguity in the user-facing conversation, avoids
-restarting a provider session for every later logical phase, and keeps final
-evaluation separate from the implementation session. This is the default
-`balanced` strategy.
+If a conversation is interrupted, invoke the `phaseharness` skill again and ask
+it to continue the active run. Resume is explicit so unrelated prompts in a new
+session do not restart the loop.
 
 ## Where State Lives
 
-Task state is stored under `tasks/` and is gitignored by default in installed
-repositories.
+All canonical harness files and runtime state live under `.phaseharness/`:
 
-Canonical harness files live under `.agent-harness/`. Claude and Codex runtime
-bridges are generated from that canonical source.
+- `.phaseharness/bin/`: state, hook, install, and commit helpers
+- `.phaseharness/hooks/`: provider hook wrappers
+- `.phaseharness/skills/phaseharness/`: skill instructions
+- `.phaseharness/subagents/`: phase-specific subagent instructions
+- `.phaseharness/runs/`: per-run artifacts and state
+- `.phaseharness/state/`: active run pointer and run index
 
-Edit `.agent-harness/` when changing the harness. Generated bridge files under
-`.claude/`, `.agents/`, and `.codex/` should be treated as runtime output.
+Provider-required files outside `.phaseharness/` are limited to managed hook
+entries, skill symlinks, and provider-native subagent bridge files:
+
+- `.claude/settings.json`
+- `.codex/config.toml`
+- `.codex/hooks.json` or inline Codex hook config
+- `.claude/skills/phaseharness`
+- `.agents/skills/phaseharness`
+- `.claude/agents/phaseharness-*.md`
+- `.codex/agents/phaseharness-*.toml`
 
 ## Development
 
@@ -132,7 +99,7 @@ Run local verification:
 
 ```bash
 python3 tests/smoke_install.py
-python3 -m py_compile core/scripts/*.py core/.agent-harness/providers/*.py tests/smoke_install.py
+python3 -m py_compile core/.phaseharness/bin/*.py tests/smoke_install.py
 ```
 
 For implementation details, see `SPEC.md` and `spec/`.

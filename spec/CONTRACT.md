@@ -1,152 +1,68 @@
 # Contract
 
-The phaseloop contract is the runtime-neutral layer that Claude Code and Codex must both honor.
+The phaseharness contract is the runtime-neutral layer that Claude Code and
+Codex must both honor.
+
+## Activation Gate
+
+The installed `Stop` hook is inert unless `.phaseharness/state/active.json`
+contains:
+
+```json
+{
+  "schema_version": 1,
+  "active_run": "<run-id>",
+  "activation_source": "phaseharness_skill",
+  "status": "active"
+}
+```
+
+Only the `phaseharness` skill may create this active state. The hook must not
+start a run by interpreting an ordinary user prompt.
+
+For session recovery, the skill may set:
+
+```json
+{
+  "resume": {
+    "status": "requested",
+    "summary": "why the user asked to continue"
+  }
+}
+```
+
+The hook may bind a new provider session only after this explicit resume
+request. A different `session_id` without a resume request must no-op.
 
 ## State Files
 
 Minimum state files:
 
-- `tasks/index.json`
-- `tasks/<task-dir>/index.json`
-- `tasks/<task-dir>/phase<N>.md`
-- `tasks/<task-dir>/analysis-output-attempt<N>.json`
-- `tasks/<task-dir>/phase<N>-output.json`
-- `tasks/<task-dir>/generate-output.json`
-- `tasks/<task-dir>/evaluate-output-attempt<N>.json`
-- `tasks/<task-dir>/artifacts/01-clarify.md`
-- `tasks/<task-dir>/artifacts/02-context.md`
-- `tasks/<task-dir>/artifacts/03-plan.md`
-- `tasks/<task-dir>/artifacts/04-generate.md`
-- `tasks/<task-dir>/artifacts/05-evaluate.md`
-- `tasks/<task-dir>/docs-diff.md`
-- optional `commit` metadata in `tasks/<task-dir>/index.json`
+- `.phaseharness/state/active.json`
+- `.phaseharness/state/index.json`
+- `.phaseharness/runs/<run-id>/state.json`
+- `.phaseharness/runs/<run-id>/artifacts/01-clarify.md`
+- `.phaseharness/runs/<run-id>/artifacts/02-context.md`
+- `.phaseharness/runs/<run-id>/artifacts/03-plan.md`
+- `.phaseharness/runs/<run-id>/artifacts/04-generate.md`
+- `.phaseharness/runs/<run-id>/artifacts/05-evaluate.md`
+- `.phaseharness/runs/<run-id>/phases/phase-NNN.md`
+- `.phaseharness/runs/<run-id>/outputs/stop-<turn>.json`
 
-Every generated JSON state file should include `schema_version` once the first stable release is cut. Until then, scripts must tolerate missing `schema_version`.
+Allowed run statuses:
 
-## Top-Level Task Index
-
-`tasks/index.json` stores the list of workflow tasks:
-
-```json
-{
-  "tasks": [
-    {
-      "id": 1,
-      "name": "example",
-      "dir": "1-example",
-      "status": "pending",
-      "created_at": "2026-04-26T12:00:00+0900"
-    }
-  ]
-}
-```
-
-Allowed task statuses:
-
-- `pending`
+- `active`
+- `waiting_user`
 - `completed`
 - `error`
 
-## Task Index
-
-`tasks/<task-dir>/index.json` stores workflow, phase, and evaluation state:
-
-```json
-{
-  "project": "target-project",
-  "task": "example",
-  "prompt": "original requirement text",
-  "status": "pending",
-  "created_at": "2026-04-26T12:00:00+0900",
-  "done_when": [
-    "observable end condition"
-  ],
-  "max_attempts": 2,
-  "session_strategy": "balanced",
-  "git_baseline": {
-    "head": "abcdef123456",
-    "status": "",
-    "dirty_paths": []
-  },
-  "sessions": [
-    {
-      "session": "clarify",
-      "phases": ["clarify"],
-      "status": "completed",
-      "attempts": 1,
-      "max_attempts": 1,
-      "source": "main_session"
-    },
-    {
-      "session": "analysis",
-      "phases": ["context", "plan"],
-      "status": "completed",
-      "attempts": 1,
-      "max_attempts": 2
-    },
-    {
-      "session": "build",
-      "phases": ["generate"],
-      "status": "pending",
-      "attempts": 0,
-      "max_attempts": 2
-    },
-    {
-      "session": "evaluate",
-      "phases": ["evaluate"],
-      "status": "pending",
-      "attempts": 0,
-      "max_attempts": 2
-    }
-  ],
-  "workflow": [
-    {
-      "phase": "clarify",
-      "artifact": "artifacts/01-clarify.md",
-      "status": "completed",
-      "attempts": 1,
-      "max_attempts": 1,
-      "source": "main_session"
-    }
-  ],
-  "artifacts": {
-    "clarify": "artifacts/01-clarify.md",
-    "context": "artifacts/02-context.md",
-    "plan": "artifacts/03-plan.md",
-    "generate": "artifacts/04-generate.md",
-    "evaluate": "artifacts/05-evaluate.md"
-  },
-  "phases": [
-    {
-      "phase": 0,
-      "name": "implementation",
-      "status": "pending",
-      "attempts": 0,
-      "max_attempts": 2
-    }
-  ],
-  "evaluation": {
-    "status": "pending",
-    "attempts": 0,
-    "max_attempts": 2
-  },
-  "commit": {
-    "status": "completed",
-    "message": "feat: example",
-    "requested_at": "2026-04-26T12:20:00+0900",
-    "baseline_head": "abcdef123456"
-  }
-}
-```
-
-Allowed workflow and implementation phase statuses:
+Allowed phase statuses:
 
 - `pending`
 - `running`
+- `waiting_user`
 - `completed`
 - `error`
-
-Allowed session statuses use the same values.
 
 Allowed evaluation statuses:
 
@@ -156,121 +72,89 @@ Allowed evaluation statuses:
 - `warn`
 - `fail`
 
-Allowed commit statuses:
+## Run State
 
-- `completed`
-- `error`
+`.phaseharness/runs/<run-id>/state.json` stores workflow state:
 
-`git_baseline` is captured when the task is created. It records the starting
-HEAD and dirty paths so automatic commit can avoid mixing pre-existing user
-changes into the workflow result.
+```json
+{
+  "schema_version": 1,
+  "run_id": "20260503-120000-example",
+  "request": "original user request",
+  "status": "active",
+  "activation_source": "phaseharness_skill",
+  "current_phase": "clarify",
+  "phase_order": ["clarify", "context_gather", "plan", "generate", "evaluate"],
+  "attempts": {
+    "clarify": 1,
+    "context_gather": 0,
+    "plan": 0,
+    "generate": 0,
+    "evaluate": 0
+  },
+  "loop": {
+    "current": 1,
+    "max": 2
+  },
+  "max_attempts_per_phase": 2,
+  "commit_mode": "none",
+  "commits": {},
+  "generate": {
+    "queue": ["phase-001"],
+    "current_phase": null,
+    "phase_attempts": {},
+    "phase_status": {
+      "phase-001": "pending"
+    },
+    "completed_phases": [],
+    "failed_phases": []
+  },
+  "needs_user": false,
+  "session": {
+    "provider": "codex",
+    "session_id": "session-id",
+    "turn_id": "turn-id",
+    "transcript_path": ".tmp-transcript.jsonl",
+    "model": "model",
+    "updated_at": "2026-05-03T12:00:00+0900"
+  },
+  "session_history": [],
+  "resume": {
+    "status": "none",
+    "summary": ""
+  },
+  "phases": {
+    "clarify": {
+      "status": "running",
+      "artifact": "artifacts/01-clarify.md"
+    }
+  },
+  "evaluation": {
+    "status": "pending"
+  }
+}
+```
 
-## Artifact Workflow
+## Hook Output
 
-Explicit work requests use a five-phase artifact workflow:
+Continuation:
 
-1. `clarify` runs in the main conversation and writes `artifacts/01-clarify.md`.
-2. `context` writes `artifacts/02-context.md`.
-3. `plan` writes `artifacts/03-plan.md`, `index.json`, and `phase<N>.md` files.
-4. `generate` executes the phase files and appends `artifacts/04-generate.md`.
-5. `evaluate` writes `artifacts/05-evaluate.md` and updates `evaluation`.
+```json
+{
+  "decision": "block",
+  "reason": "Continue the active phaseharness run..."
+}
+```
 
-The default session strategy is `balanced`:
+No-op:
 
-- `clarify` runs in the current conversation so user decisions are captured
-  before headless work starts.
-- `analysis` runs logical phases 2-3 in one headless agent session.
-- `build` runs implementation phases from `phase<N>.md`.
-- `evaluate` runs final verification in a separate headless agent session.
-
-Logical phases remain visible in `workflow`; agent session boundaries are
-tracked in `sessions`. The next agent session must read previous artifacts
-from disk; conversation memory is not part of the contract.
-
-`done_when` defines when the task is finished. Evaluation may pass or warn only when these conditions and phase acceptance criteria are satisfied.
+- Claude Code: empty stdout and exit 0
+- Codex: `{"continue":true}`
 
 ## Commit Result
 
-Commit is an optional post-workflow action, not a required sixth phase.
+Commit is optional. It is not a workflow phase.
 
-The default commit mode is `none`. The phaseloop skill must determine commit
-mode before starting a workflow:
-
-- `none`: do not commit automatically.
-- `final`: call `scripts/commit-result.py` after evaluation is `pass` or
-  `warn`.
-- `phase`: call `scripts/commit-result.py --phase <N> --allow-head-move` after
-  each completed generate phase. Evaluation remains local task state and must
-  not create an empty validation commit.
-
-A user or agent may also run the `commit` skill after inspecting a completed
-task.
-
-Automatic commit must fail closed when:
-
-- the task is not `completed`
-- evaluation is not `pass` or `warn`
-- `git HEAD` changed after the task was created
-- a path that was dirty at task creation is still dirty
-
-The commit script may stage current changed paths only after excluding baseline
-dirty paths. It must not push.
-
-By default, phaseloop task state under `tasks/` is excluded from product
-commits. Commit subjects should come from explicit user input, task metadata, or
-phase `commit_message` fields, and should not expose phaseloop internal task
-paths by default. `--include-harness-state` is the explicit opt-in for
-committing phaseloop state files. Installed target repositories should ignore
-runtime task state with `tasks/.gitignore`.
-
-Automatic commit assumes no unrelated concurrent edits are made after task
-creation. If that assumption is not true, the user should commit manually with
-explicit staging.
-
-If no product paths are stageable after excluding phaseloop task state and
-baseline-dirty paths, the commit step succeeds without creating an empty commit.
-
-## Implementation Phases
-
-The plan phase may split generate work into `phase<N>.md` files.
-
-Rules:
-
-- Each phase must be executable in an independent session.
-- Acceptance criteria must be concrete and runnable when possible.
-- Phase execution may retry up to `max_attempts`.
-- The phase runner must include prior artifacts, task index, docs, and phase file content in the prompt.
-- Phase result output is stored in `phase<N>-output.json`.
-- Phase status is read from `tasks/<task-dir>/index.json` after execution.
-- Phase 0 completion triggers `docs-diff.md` generation when docs changed.
-
-## Failure Categories
-
-Headless failures must be categorized:
-
-- `validation_failed`
-- `sandbox_blocked`
-- `context_insufficient`
-- `runtime_error`
-
-`context_insufficient` means the harness could not make a responsible decision without missing repository context. It is not a generic runtime error.
-
-`sandbox_blocked` means the runtime policy prevented a required action. In headless mode the provider must record this and return, not ask for approval.
-
-## Headless Semantics
-
-The canonical headless signal is:
-
-```bash
-AGENT_HEADLESS=1
-```
-
-Meaning:
-
-- Do not ask questions.
-- Do not wait for confirmation.
-- Choose reasonable defaults only when local context supports the decision.
-- If context is insufficient, record `context_insufficient` and stop.
-- Do not depend on approval UI.
-
-`AGENT_HEADLESS=1` means autonomous within known context, not unconditional progress.
+`.phaseharness/bin/commit-result.py` may commit product changes for a completed
+run whose evaluation is `pass` or `warn`. It excludes `.phaseharness/` state by
+default unless `--include-harness-state` is supplied.

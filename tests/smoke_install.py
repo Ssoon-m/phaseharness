@@ -1,41 +1,58 @@
 #!/usr/bin/env python3
 from __future__ import annotations
 
+import json
 import shutil
 import subprocess
 import sys
 import tempfile
-import json
 from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
 
 
-def run(cmd: list[str], cwd: Path) -> None:
-    result = subprocess.run(cmd, cwd=str(cwd), text=True, capture_output=True)
+def run(cmd: list[str], cwd: Path, input_text: str | None = None) -> subprocess.CompletedProcess[str]:
+    result = subprocess.run(cmd, cwd=str(cwd), text=True, input=input_text, capture_output=True)
     if result.returncode != 0:
         sys.stderr.write(result.stdout)
         sys.stderr.write(result.stderr)
         raise SystemExit(result.returncode)
+    return result
 
 
-def copy_core(target: Path) -> None:
-    (target / ".agent-harness").mkdir()
-    (target / "scripts").mkdir()
-    (target / "docs").mkdir()
-    (target / "tasks").mkdir()
+def copy_phaseharness(target: Path) -> None:
+    shutil.copytree(ROOT / "core" / ".phaseharness", target / ".phaseharness", dirs_exist_ok=True)
 
-    shutil.copytree(
-        ROOT / "core" / ".agent-harness",
-        target / ".agent-harness",
-        dirs_exist_ok=True,
-    )
-    for script in (ROOT / "core" / "scripts").glob("*.py"):
-        shutil.copy2(script, target / "scripts" / script.name)
-    for doc in (ROOT / "core" / "templates" / "docs").glob("*.md"):
-        shutil.copy2(doc, target / "docs" / doc.name)
-    shutil.copy2(ROOT / "core" / "templates" / "tasks" / ".gitignore", target / "tasks" / ".gitignore")
+
+def init_state(target: Path) -> None:
+    state_dir = target / ".phaseharness" / "state"
+    state_dir.mkdir(parents=True, exist_ok=True)
+    active = state_dir / "active.json"
+    index = state_dir / "index.json"
+    if not active.exists():
+        active.write_text(
+            json.dumps(
+                {
+                    "schema_version": 1,
+                    "active_run": None,
+                    "activation_source": None,
+                    "status": "inactive",
+                    "session_id": None,
+                    "provider": None,
+                },
+                indent=2,
+            )
+            + "\n"
+        )
+    if not index.exists():
+        index.write_text(json.dumps({"schema_version": 1, "runs": []}, indent=2) + "\n")
+
+
+def install_fixture(target: Path) -> None:
+    copy_phaseharness(target)
+    init_state(target)
+    run(["chmod", "+x", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-install-hooks.py", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/commit-result.py", ".phaseharness/hooks/claude-stop.sh", ".phaseharness/hooks/codex-stop.sh"], target)
 
 
 def write_existing_hooks(target: Path) -> None:
@@ -48,12 +65,7 @@ def write_existing_hooks(target: Path) -> None:
                     "PostToolUse": [
                         {
                             "matcher": "Bash",
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": "echo existing-claude-hook",
-                                }
-                            ],
+                            "hooks": [{"type": "command", "command": "echo existing-claude-hook"}],
                         }
                     ]
                 }
@@ -69,12 +81,7 @@ def write_existing_hooks(target: Path) -> None:
                     "PostToolUse": [
                         {
                             "matcher": "Bash",
-                            "hooks": [
-                                {
-                                    "type": "command",
-                                    "command": "echo existing-codex-hook",
-                                }
-                            ],
+                            "hooks": [{"type": "command", "command": "echo existing-codex-hook"}],
                         }
                     ]
                 }
@@ -94,10 +101,10 @@ def assert_hook_merge(target: Path) -> None:
         raise SystemExit("existing Claude hook was not preserved")
     if "existing-codex-hook" not in codex_text:
         raise SystemExit("existing Codex hook was not preserved")
-    if claude_text.count("phaseloop-sync-bridges") != 2:
-        raise SystemExit("Claude phaseloop hooks were not installed idempotently")
-    if codex_text.count("phaseloop-sync-bridges") != 2:
-        raise SystemExit("Codex phaseloop hooks were not installed idempotently")
+    if claude_text.count(".phaseharness") != 1:
+        raise SystemExit("Claude phaseharness hook was not installed idempotently")
+    if codex_text.count(".phaseharness") != 1:
+        raise SystemExit("Codex phaseharness hook was not installed idempotently")
     config = (target / ".codex" / "config.toml").read_text()
     if "codex_hooks = true" not in config:
         raise SystemExit("Codex hooks feature flag was not enabled")
@@ -106,7 +113,9 @@ def assert_hook_merge(target: Path) -> None:
 def assert_inline_codex_merge(tmp: Path) -> None:
     target = tmp / "inline-codex"
     target.mkdir()
-    copy_core(target)
+    run(["git", "init", "--initial-branch=main"], target)
+    run(["git", "-c", "user.name=Harness Smoke", "-c", "user.email=smoke@example.invalid", "commit", "--allow-empty", "-m", "test: initial"], target)
+    install_fixture(target)
     (target / ".codex").mkdir(exist_ok=True)
     (target / ".codex" / "config.toml").write_text(
         "[features]\ncodex_hooks = false\n\n"
@@ -116,96 +125,477 @@ def assert_inline_codex_merge(tmp: Path) -> None:
         "type = \"command\"\n"
         "command = \"echo existing-inline-codex-hook\"\n"
     )
-    run(["python3", "scripts/install-hooks.py", "--runtime", "codex"], target)
+    run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py", "--runtime", "codex"], target)
     config = (target / ".codex" / "config.toml").read_text()
     if "existing-inline-codex-hook" not in config:
         raise SystemExit("existing inline Codex hook was not preserved")
     if "codex_hooks = true" not in config:
         raise SystemExit("inline Codex hooks feature flag was not enabled")
-    if config.count("# BEGIN phaseloop managed hook") != 1:
-        raise SystemExit("inline Codex phaseloop hook block was not installed once")
+    if config.count("# BEGIN phaseharness managed hook") != 1:
+        raise SystemExit("inline Codex phaseharness hook block was not installed once")
     if (target / ".codex" / "hooks.json").exists():
         raise SystemExit("inline-only Codex hook install should not create hooks.json")
 
 
+def assert_no_legacy_paths(target: Path) -> None:
+    for rel in (
+        "scripts",
+        "tasks",
+    ):
+        if (target / rel).exists():
+            raise SystemExit(f"legacy path should not be installed: {rel}")
+
+
+def assert_native_subagents(target: Path) -> None:
+    claude_agents = target / ".claude" / "agents"
+    codex_agents = target / ".codex" / "agents"
+    for name in ("clarify", "context-gather", "plan", "generate", "evaluate"):
+        claude_path = claude_agents / f"phaseharness-{name}.md"
+        codex_path = codex_agents / f"phaseharness-{name}.toml"
+        if not claude_path.exists():
+            raise SystemExit(f"missing Claude native subagent: {claude_path.relative_to(target)}")
+        if not codex_path.exists():
+            raise SystemExit(f"missing Codex native subagent: {codex_path.relative_to(target)}")
+        claude_text = claude_path.read_text()
+        codex_text = codex_path.read_text()
+        if f"name: phaseharness-{name}" not in claude_text or "description:" not in claude_text:
+            raise SystemExit(f"invalid Claude subagent frontmatter: {claude_path.relative_to(target)}")
+        if "developer_instructions" not in codex_text or "name = " not in codex_text:
+            raise SystemExit(f"invalid Codex subagent TOML: {codex_path.relative_to(target)}")
+    if "phaseharness_generate" not in (codex_agents / "phaseharness-generate.toml").read_text():
+        raise SystemExit("Codex generate subagent name was not written")
+
+
+def hook_input(target: Path, session_id: str, turn_id: str) -> str:
+    return json.dumps(
+        {
+            "cwd": str(target),
+            "hook_event_name": "Stop",
+            "session_id": session_id,
+            "turn_id": turn_id,
+            "transcript_path": str(target / ".tmp-transcript.jsonl"),
+            "model": "test-model",
+            "stop_hook_active": False,
+            "last_assistant_message": "done",
+        }
+    )
+
+
+def assert_hook_noop(target: Path) -> None:
+    claude = run(["sh", ".phaseharness/hooks/claude-stop.sh"], target, hook_input(target, "s0", "t0"))
+    if claude.stdout.strip():
+        raise SystemExit(f"Claude no-op should be empty, got: {claude.stdout!r}")
+    codex = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s0", "t0"))
+    if json.loads(codex.stdout).get("continue") is not True:
+        raise SystemExit("Codex no-op should return continue true")
+
+
+def assert_start_requires_choices(target: Path) -> None:
+    missing = subprocess.run(
+        ["python3", ".phaseharness/bin/phaseharness-state.py", "start", "--request", "missing choices"],
+        cwd=str(target),
+        text=True,
+        capture_output=True,
+    )
+    if missing.returncode == 0:
+        raise SystemExit("start should require explicit loop count, max attempts per phase, and commit mode")
+
+
+def assert_hook_activation_and_resume(target: Path) -> None:
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "add a small fixture",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "3",
+            "--commit-mode",
+            "none",
+        ],
+        target,
+    )
+    run_id = result.stdout.strip()
+    run_dir = target / ".phaseharness" / "runs" / run_id
+    (run_dir / "artifacts" / "01-clarify.md").write_text("# Phase 1: Clarify\n\nDone when fixture exists.\n")
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "set-phase", "clarify", "completed"], target)
+
+    first = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s1", "t1"))
+    first_json = json.loads(first.stdout)
+    if first_json.get("decision") != "block" or "context_gather" not in first_json.get("reason", ""):
+        raise SystemExit("active run did not continue to context_gather")
+    if "Loop: `1` of `2`" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not include loop count")
+    if "Attempt: `1` of `3`" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not include max attempts per phase")
+    if "Commit mode: `none`" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not include commit mode")
+
+    other_session = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s2", "t2"))
+    if json.loads(other_session.stdout).get("continue") is not True:
+        raise SystemExit("different session should not auto-resume without skill resume")
+
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "resume", "--summary", "resume in new session"], target)
+    resumed = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s2", "t3"))
+    resumed_json = json.loads(resumed.stdout)
+    if resumed_json.get("decision") != "block":
+        raise SystemExit("resume request did not produce continuation")
+    state = json.loads((run_dir / "state.json").read_text())
+    if state.get("session", {}).get("session_id") != "s2":
+        raise SystemExit("resume did not bind the new session")
+    if not state.get("session_history"):
+        raise SystemExit("previous session was not recorded in session_history")
+
+
+def continue_hook(target: Path, session_id: str, turn_id: str) -> str:
+    result = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, session_id, turn_id))
+    data = json.loads(result.stdout)
+    if data.get("decision") != "block":
+        raise SystemExit(f"expected continuation for {turn_id}, got: {data}")
+    return data.get("reason", "")
+
+
+def complete_phase(target: Path, run_id: str, phase: str, artifact: str, text: str, turn_id: str) -> str:
+    run_dir = target / ".phaseharness" / "runs" / run_id
+    (run_dir / artifact).write_text(text)
+    args = ["python3", ".phaseharness/bin/phaseharness-state.py", "set-phase", phase, "completed"]
+    if phase == "evaluate":
+        args.extend(["--evaluation-status", "pass"])
+    run(args, target)
+    result = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "workflow-session", turn_id))
+    data = json.loads(result.stdout)
+    if phase == "evaluate":
+        if data.get("continue") is not True:
+            raise SystemExit(f"evaluate completion should deactivate hook, got: {data}")
+        return ""
+    if data.get("decision") != "block":
+        raise SystemExit(f"expected continuation after {phase}, got: {data}")
+    return data.get("reason", "")
+
+
+def write_implementation_phase(target: Path, run_id: str, phase_id: str, text: str | None = None) -> None:
+    run_dir = target / ".phaseharness" / "runs" / run_id
+    phase_file = run_dir / "phases" / f"{phase_id}.md"
+    phase_file.write_text(text or f"# {phase_id}\n\n## Work\n- test implementation phase\n")
+
+
+def complete_generate_phase(target: Path, run_id: str, phase_id: str, text: str, turn_id: str) -> str:
+    run_dir = target / ".phaseharness" / "runs" / run_id
+    artifact = run_dir / "artifacts" / "04-generate.md"
+    existing = artifact.read_text() if artifact.exists() else ""
+    artifact.write_text(existing + text)
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "set-generate-phase", phase_id, "completed"], target)
+    result = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "workflow-session", turn_id))
+    data = json.loads(result.stdout)
+    if data.get("decision") != "block":
+        raise SystemExit(f"expected continuation after implementation phase {phase_id}, got: {data}")
+    return data.get("reason", "")
+
+
+def assert_full_workflow(target: Path) -> None:
+    run(
+        ["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"],
+        target,
+    )
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "run full workflow",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "3",
+            "--commit-mode",
+            "none",
+        ],
+        target,
+    )
+    run_id = result.stdout.strip()
+    run_dir = target / ".phaseharness" / "runs" / run_id
+
+    # A partial artifact without completed state must not advance the phase.
+    (run_dir / "artifacts" / "01-clarify.md").write_text("# Phase 1\n")
+    first = continue_hook(target, "workflow-session", "wf-1")
+    if "clarify" not in first:
+        raise SystemExit("running clarify should continue clarify until state marks it completed")
+
+    prompt = complete_phase(target, run_id, "clarify", "artifacts/01-clarify.md", "# Phase 1\nDone\n", "wf-2")
+    if "context_gather" not in prompt:
+        raise SystemExit("clarify did not advance to context_gather")
+    prompt = complete_phase(target, run_id, "context_gather", "artifacts/02-context.md", "# Phase 2\nDone\n", "wf-3")
+    if "plan" not in prompt:
+        raise SystemExit("context_gather did not advance to plan")
+    write_implementation_phase(target, run_id, "phase-001")
+    prompt = complete_phase(target, run_id, "plan", "artifacts/03-plan.md", "# Phase 3\nDone\n", "wf-4")
+    if "generate" not in prompt:
+        raise SystemExit("plan did not advance to generate")
+    if "phase-001" not in prompt:
+        raise SystemExit("generate prompt did not target phase-001")
+    prompt = complete_generate_phase(target, run_id, "phase-001", "# Phase 4\nDone\n", "wf-5")
+    if "evaluate" not in prompt:
+        raise SystemExit("generate did not advance to evaluate")
+    complete_phase(target, run_id, "evaluate", "artifacts/05-evaluate.md", "# Phase 5\n\n## Result\npass\n", "wf-6")
+
+    state = json.loads((run_dir / "state.json").read_text())
+    if state.get("status") != "completed":
+        raise SystemExit("full workflow did not mark run completed")
+    active = json.loads((target / ".phaseharness" / "state" / "active.json").read_text())
+    if active.get("status") != "inactive" or active.get("active_run") is not None:
+        raise SystemExit("full workflow did not clear active run")
+
+
+def assert_same_turn_id_advances_between_phases(target: Path) -> None:
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"], target)
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "same turn id workflow",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "2",
+            "--commit-mode",
+            "none",
+        ],
+        target,
+    )
+    run_id = result.stdout.strip()
+    run_dir = target / ".phaseharness" / "runs" / run_id
+    session_id = "same-turn-session"
+    turn_id = "same-turn"
+
+    prompt = continue_hook(target, session_id, turn_id)
+    if "clarify" not in prompt:
+        raise SystemExit("same turn workflow did not start clarify")
+
+    (run_dir / "artifacts" / "01-clarify.md").write_text("# Clarify\nDone\n")
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "set-phase", "clarify", "completed"], target)
+    prompt = continue_hook(target, session_id, turn_id)
+    if "context_gather" not in prompt:
+        raise SystemExit("same turn workflow did not advance to context_gather")
+
+    (run_dir / "artifacts" / "02-context.md").write_text("# Context\nDone\n")
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "set-phase", "context_gather", "completed"], target)
+    prompt = continue_hook(target, session_id, turn_id)
+    if "plan" not in prompt:
+        raise SystemExit("same turn workflow did not advance to plan")
+
+
+def assert_evaluate_failure_loops(target: Path) -> None:
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"], target)
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "exercise evaluate loop",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "2",
+            "--commit-mode",
+            "none",
+        ],
+        target,
+    )
+    run_id = result.stdout.strip()
+    run_dir = target / ".phaseharness" / "runs" / run_id
+    continue_hook(target, "workflow-session", "loop-1")
+    complete_phase(target, run_id, "clarify", "artifacts/01-clarify.md", "# Clarify\nDone\n", "loop-2")
+    complete_phase(target, run_id, "context_gather", "artifacts/02-context.md", "# Context\nDone\n", "loop-3")
+    write_implementation_phase(target, run_id, "phase-001")
+    complete_phase(target, run_id, "plan", "artifacts/03-plan.md", "# Plan\nDone\n", "loop-4")
+    complete_generate_phase(target, run_id, "phase-001", "# Generate\nphase-001 done\n", "loop-5")
+
+    write_implementation_phase(target, run_id, "phase-002", "# phase-002\n\nFollow-up from evaluate.\n")
+    (run_dir / "artifacts" / "05-evaluate.md").write_text("# Evaluate\n\n## Result\nfail\n")
+    run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "set-phase",
+            "evaluate",
+            "completed",
+            "--evaluation-status",
+            "fail",
+        ],
+        target,
+    )
+    follow_up = continue_hook(target, "workflow-session", "loop-6")
+    if "Loop: `2` of `2`" not in follow_up or "phase-002" not in follow_up:
+        raise SystemExit("evaluate fail did not loop back to follow-up implementation phase")
+    complete_generate_phase(target, run_id, "phase-002", "# Generate\nphase-002 done\n", "loop-7")
+    complete_phase(target, run_id, "evaluate", "artifacts/05-evaluate.md", "# Evaluate\n\n## Result\npass\n", "loop-8")
+
+    state = json.loads((run_dir / "state.json").read_text())
+    if state.get("status") != "completed" or state.get("loop", {}).get("current") != 2:
+        raise SystemExit("evaluate loop did not complete on second loop")
+
+
+def assert_waiting_user_resume(target: Path) -> None:
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "needs user input",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "2",
+            "--commit-mode",
+            "none",
+        ],
+        target,
+    )
+    run_id = result.stdout.strip()
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "set-phase", "clarify", "waiting_user"], target)
+    waiting = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "waiting-session", "wait-1"))
+    if json.loads(waiting.stdout).get("continue") is not True:
+        raise SystemExit("waiting_user run should not auto-continue")
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "resume", "--summary", "user answered"], target)
+    resumed = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "waiting-session", "wait-2"))
+    data = json.loads(resumed.stdout)
+    if data.get("decision") != "block" or "clarify" not in data.get("reason", ""):
+        raise SystemExit("waiting_user resume did not continue clarify")
+    state = json.loads((target / ".phaseharness" / "runs" / run_id / "state.json").read_text())
+    if state.get("phases", {}).get("clarify", {}).get("status") != "running":
+        raise SystemExit("waiting_user resume did not reset phase to running")
+
+
+def assert_commit_modes(target: Path) -> None:
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"], target)
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "add phase commit file",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "2",
+            "--commit-mode",
+            "phase",
+        ],
+        target,
+    )
+    phase_run_id = result.stdout.strip()
+    phase_run_dir = target / ".phaseharness" / "runs" / phase_run_id
+    continue_hook(target, "workflow-session", "phase-1")
+    complete_phase(target, phase_run_id, "clarify", "artifacts/01-clarify.md", "# Clarify\nDone\n", "phase-2")
+    complete_phase(target, phase_run_id, "context_gather", "artifacts/02-context.md", "# Context\nDone\n", "phase-3")
+    write_implementation_phase(target, phase_run_id, "phase-001")
+    complete_phase(target, phase_run_id, "plan", "artifacts/03-plan.md", "# Plan\nDone\n", "phase-4")
+    (target / "phase-product.txt").write_text("phase product\n")
+    prompt = complete_generate_phase(target, phase_run_id, "phase-001", "# Generate\nDone\n", "phase-5")
+    if "evaluate" not in prompt:
+        raise SystemExit("phase commit mode did not advance to evaluate")
+    phase_state = json.loads((phase_run_dir / "state.json").read_text())
+    if phase_state.get("commits", {}).get("implementation_phase-001", {}).get("status") != "completed":
+        raise SystemExit("phase commit mode did not record a completed implementation phase commit")
+    tree = run(["git", "ls-tree", "-r", "--name-only", "HEAD"], target).stdout
+    if "phase-product.txt" not in tree:
+        raise SystemExit("phase commit mode did not commit product file")
+
+    run(["python3", ".phaseharness/bin/phaseharness-state.py", "clear-active"], target)
+    result = run(
+        [
+            "python3",
+            ".phaseharness/bin/phaseharness-state.py",
+            "start",
+            "--request",
+            "add final commit file",
+            "--loop-count",
+            "2",
+            "--max-attempts-per-phase",
+            "2",
+            "--commit-mode",
+            "final",
+        ],
+        target,
+    )
+    final_run_id = result.stdout.strip()
+    final_run_dir = target / ".phaseharness" / "runs" / final_run_id
+    continue_hook(target, "workflow-session", "final-1")
+    complete_phase(target, final_run_id, "clarify", "artifacts/01-clarify.md", "# Clarify\nDone\n", "final-2")
+    complete_phase(target, final_run_id, "context_gather", "artifacts/02-context.md", "# Context\nDone\n", "final-3")
+    write_implementation_phase(target, final_run_id, "phase-001")
+    complete_phase(target, final_run_id, "plan", "artifacts/03-plan.md", "# Plan\nDone\n", "final-4")
+    (target / "final-product.txt").write_text("final product\n")
+    complete_generate_phase(target, final_run_id, "phase-001", "# Generate\nDone\n", "final-5")
+    complete_phase(target, final_run_id, "evaluate", "artifacts/05-evaluate.md", "# Evaluate\n\n## Result\npass\n", "final-6")
+    final_state = json.loads((final_run_dir / "state.json").read_text())
+    if final_state.get("commits", {}).get("final", {}).get("status") != "completed":
+        raise SystemExit("final commit mode did not record a completed final commit")
+    tree = run(["git", "ls-tree", "-r", "--name-only", "HEAD"], target).stdout
+    if "final-product.txt" not in tree:
+        raise SystemExit("final commit mode did not commit product file")
+
+
 def main() -> int:
-    with tempfile.TemporaryDirectory(prefix="harness-smoke-") as tmp:
+    with tempfile.TemporaryDirectory(prefix="phaseharness-smoke-") as tmp:
         tmp_path = Path(tmp)
         target = tmp_path / "target"
         target.mkdir()
         run(["git", "init", "--initial-branch=main"], target)
-        run(
-            [
-                "git",
-                "-c",
-                "user.name=Harness Smoke",
-                "-c",
-                "user.email=smoke@example.invalid",
-                "commit",
-                "--allow-empty",
-                "-m",
-                "test: initial fixture",
-            ],
-            target,
-        )
-        copy_core(target)
+        run(["git", "config", "user.name", "Harness Smoke"], target)
+        run(["git", "config", "user.email", "smoke@example.invalid"], target)
+        run(["git", "commit", "--allow-empty", "-m", "test: initial fixture"], target)
+
+        install_fixture(target)
         write_existing_hooks(target)
         assert_inline_codex_merge(tmp_path)
 
-        run(["python3", "scripts/gen-bridges.py"], target)
-        run(["python3", "scripts/install-hooks.py"], target)
-        run(["python3", "scripts/install-hooks.py"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
         assert_hook_merge(target)
-        run(["python3", "scripts/sync-bridges.py", "--force"], target)
-        run(["sh", ".claude/hooks/phaseloop-sync-bridges.sh"], target)
-        run(["sh", ".codex/hooks/phaseloop-sync-bridges.sh"], target)
+        assert_no_legacy_paths(target)
+        assert_native_subagents(target)
+
         expected = [
-            ".claude/skills",
-            ".agents/skills",
-            ".claude/hooks/phaseloop-sync-bridges.sh",
-            ".codex/hooks/phaseloop-sync-bridges.sh",
-            "tasks/.gitignore",
-            ".claude/agents/phase-clarify.md",
-            ".codex/agents/phase-clarify.toml",
-            ".claude/agents/phase-context.md",
-            ".codex/agents/phase-context.toml",
-            ".claude/agents/phase-plan.md",
-            ".codex/agents/phase-plan.toml",
-            ".claude/agents/phase-generate.md",
-            ".codex/agents/phase-generate.toml",
-            ".claude/agents/phase-evaluate.md",
-            ".codex/agents/phase-evaluate.toml",
+            ".phaseharness/bin/phaseharness-hook.py",
+            ".phaseharness/bin/phaseharness-install-hooks.py",
+            ".phaseharness/bin/phaseharness-state.py",
+            ".phaseharness/bin/commit-result.py",
+            ".phaseharness/hooks/claude-stop.sh",
+            ".phaseharness/hooks/codex-stop.sh",
+            ".phaseharness/skills/phaseharness/SKILL.md",
+            ".claude/skills/phaseharness",
+            ".agents/skills/phaseharness",
+            ".claude/agents/phaseharness-clarify.md",
+            ".codex/agents/phaseharness-clarify.toml",
         ]
         for rel in expected:
             if not (target / rel).exists():
-                raise SystemExit(f"missing generated bridge: {rel}")
+                raise SystemExit(f"missing installed path: {rel}")
 
-        run(["python3", "scripts/run-workflow.py", "--help"], target)
-        run(["python3", "scripts/run-phases.py", "--help"], target)
-        run(["python3", "scripts/commit-result.py", "--help"], target)
-        run(["python3", "scripts/install-hooks.py", "--help"], target)
-        run(["python3", "scripts/sync-bridges.py", "--help"], target)
-        run(["python3", "scripts/gen-docs-diff.py", "--help"], target)
-        run(
-            [
-                "python3",
-                "-m",
-                "py_compile",
-                "scripts/_utils.py",
-                "scripts/commit-result.py",
-                "scripts/gen-bridges.py",
-                "scripts/gen-docs-diff.py",
-                "scripts/install-hooks.py",
-                "scripts/run-phases.py",
-                "scripts/run-workflow.py",
-                "scripts/sync-bridges.py",
-                ".agent-harness/providers/base.py",
-                ".agent-harness/providers/claude.py",
-                ".agent-harness/providers/codex.py",
-                ".agent-harness/providers/registry.py",
-            ],
-            target,
-        )
+        assert_hook_noop(target)
+        assert_start_requires_choices(target)
+        assert_hook_activation_and_resume(target)
+        assert_same_turn_id_advances_between_phases(target)
+        assert_full_workflow(target)
+        assert_evaluate_failure_loops(target)
+        assert_waiting_user_resume(target)
+        assert_commit_modes(target)
+
+        run(["python3", ".phaseharness/bin/phaseharness-state.py", "--help"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-hook.py", "--help"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py", "--help"], target)
+        run(["python3", ".phaseharness/bin/commit-result.py", "--help"], target)
+        run(["python3", "-m", "py_compile", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-install-hooks.py", ".phaseharness/bin/commit-result.py"], target)
     return 0
 
 

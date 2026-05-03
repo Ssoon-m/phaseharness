@@ -1,4 +1,0 @@
-name = "phase-context"
-description = "Gathers the codebase facts needed for a clarified task: relevant files, patterns, constraints, risks, and validation commands."
-tools_policy = "read-only"
-sandbox_mode = "read-only"

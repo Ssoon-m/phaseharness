@@ -1,129 +1,96 @@
 # phaseloop
 
-Claude Code와 Codex에서 사용할 수 있는 portable five-phase agent workflow입니다.
+Claude Code와 Codex에서 사용할 수 있는 설치형 `phaseharness` workflow입니다.
 
-phaseloop는 provider-neutral harness를 대상 저장소에 설치합니다. 하나의
-구체적인 repository 작업 요청을 durable task state, implementation phase, evaluation으로
-나누어 한 대화의 긴 컨텍스트에 의존하지 않고 작업을 진행합니다.
-
-## 설치
-
-대상 저장소에서 Claude Code 또는 Codex를 열고, 아래 문장을 그대로 요청합니다.
-
-```text
-Install phaseloop from this installer document:
-https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
-```
-
-installer는 canonical harness를 복사하고, Claude/Codex bridge를 생성하고,
-starter project docs와 local task state를 만든 뒤 smoke verification을
-실행합니다.
-
-workflow state를 소유할 디렉터리에서 설치하세요. 모노레포라면 레포 루트나
-특정 app/package 디렉터리 중 하나를 선택할 수 있습니다.
-
-## 작업 실행
-
-설치된 skill을 사용합니다.
-
-```text
-Use the phaseloop skill to implement <request> with max attempts 3 and commit mode none.
-```
-
-`max attempts`는 각 workflow session 또는 build phase의 retry budget입니다.
-`commit mode`는 phaseloop가 git commit을 자동으로 만들지 여부를 제어합니다.
-둘 중 하나를 생략하면 skill이 기본값을 사용하기 전에 한 번 확인합니다.
-Headless runner를 시작하기 전에 skill은 현재 대화에서 요청을 clarify하고,
-질문, 사용자 결정, done condition을 첫 task artifact로 기록합니다.
-
-특정 runtime을 강제하려면 skill 요청에 `using Claude` 또는 `using Codex`처럼
-명시하세요. 생략하면 phaseloop는 설정된 기본값을 사용합니다.
-
-## Commit Mode
-
-기본값은 `none`입니다.
-
-- `none`: 변경사항을 자동 커밋하지 않습니다.
-- `final`: evaluation이 `pass` 또는 `warn`이면 product commit 하나를 만듭니다.
-- `phase`: 완료된 generate phase마다 phase context를 commit skill에 전달해
-  commit을 만듭니다. Evaluation은 로컬 상태로 남기며 빈 validation commit을
-  만들지 않습니다.
-
-Product commit은 기본적으로 phaseloop task artifact를 포함하지 않습니다. 설치된
-저장소에서는 `tasks/` 아래 runtime task state가 기본적으로 로컬 상태로
-유지됩니다.
-커밋할 product change가 없으면 빈 커밋을 만들지 않고 commit step을 성공으로
-처리합니다.
-
-commit script는 task 완료 여부, evaluation 상태, HEAD 이동 여부, workflow 시작 전
-dirty path를 확인한 뒤 commit을 만듭니다.
-
-최신 완료 task result를 수동으로 커밋하려면:
-
-```bash
-python3 scripts/commit-result.py
-```
-
-특정 task를 커밋하려면:
-
-```bash
-python3 scripts/commit-result.py <task-dir>
-```
-
-phaseloop state를 의도적으로 포함하려면:
-
-```bash
-python3 scripts/commit-result.py <task-dir> --include-harness-state
-```
-
-## 동작 방식
-
-phaseloop는 하나의 요청을 다섯 logical phase로 실행합니다.
+이 저장소는 대상 repository에 `.phaseharness/` 디렉터리로 복사되는 canonical
+harness를 제공합니다. 설치된 harness는 provider의 `Stop` hook과 파일 상태를
+사용해 하나의 작업을 아래 순서로 진행합니다.
 
 ```text
 clarify -> context gather -> plan -> generate -> evaluate
 ```
 
-각 phase의 의미:
+Hook은 provider 설정에 설치되지만 기본적으로 비활성입니다. 사용자가
+`phaseharness` skill을 명시적으로 호출하고 skill이 active run 파일을 만들 때만
+loop가 이어집니다.
 
-- `clarify`: 요청을 scope, 사용자 결정, assumptions, non-goals, done
-  conditions를 포함한 실행 계약으로 바꿉니다.
-- `context gather`: 그 계약을 수행하는 데 필요한 repository facts만 모읍니다:
-  relevant files, existing patterns, constraints, risks, validation commands.
-- `plan`: clarify와 context를 ordered implementation phases와 concrete
-  acceptance criteria로 바꿉니다.
-- `generate`: 계획된 phase를 실행하고, 가능하면 검증하며, clarification이나
-  planning을 다시 열지 않고 결과를 기록합니다.
-- `evaluate`: 완료된 작업을 done conditions와 acceptance criteria에 맞춰
-  독립적으로 확인하고 pass, warn, fail로 보고합니다.
+## 설치
 
-기본 실행 방식은 clarify를 현재 대화에서 처리해, 구현 계획 전에 사용자가 답해야
-하는 중요한 질문을 주고받을 수 있게 합니다. 그 다음 context gather와 plan을
-하나의 headless analysis session에서 처리하고, 구현과 검증은 별도 세션으로
-나눕니다.
+대상 저장소에서 Claude Code 또는 Codex를 열고 아래 요청을 전달합니다.
 
 ```text
-main session: clarify
-analysis: context gather + plan
-build: planned implementation phases
-evaluate: independent verification
+Install phaseharness from this installer document:
+https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 ```
 
-이 구조는 요구사항의 애매한 부분을 사용자-facing 대화에서 정리하고, 이후 작은
-logical phase마다 provider session을 다시 시작하는 비용을 줄이며, 최종
-evaluation을 implementation session과 분리합니다. 이것이 기본 `balanced`
-strategy입니다.
+Installer는 `core/.phaseharness/`를 대상 저장소의 `.phaseharness/`로 복사하고,
+Claude/Codex `Stop` hook entry, `phaseharness` skill bridge,
+provider-native subagent bridge를 설치한 뒤 smoke verification을 실행합니다.
+
+## 작업 실행
+
+설치된 skill을 명시적으로 사용합니다.
+
+```text
+Use the phaseharness skill to implement <request> with loop count 2, max attempts per phase 2, and commit mode none.
+```
+
+Loop count, max attempts per phase, commit mode가 빠져 있으면 skill은 active
+run을 만들기 전에 한 번 질문해야 합니다. Loop count는 `generate -> evaluate`
+cycle의 최대 횟수이고, max attempts per phase는 plan에서 나뉜 각 implementation
+phase의 retry budget입니다. Commit mode는 `none`, `final`, `phase` 중
+하나입니다.
+
+## 실행 옵션
+
+`loop count`는 전체 build-review cycle의 최대 횟수입니다. 한 loop에서는 계획된
+implementation phase를 `generate`가 처리하고, `evaluate`가 `pass`, `warn`,
+`fail`을 판정합니다. `evaluate`가 실패하고 follow-up phase 파일을 추가하면 다음
+loop에서 다시 `generate`로 돌아갑니다. `loop count 2`는 첫 평가 실패 뒤 한 번의
+추가 build-review cycle을 허용한다는 뜻입니다.
+
+`max attempts per phase`는 각 실행 phase의 retry budget입니다. `generate`에서는
+`phase-001`, `phase-002` 같은 계획된 implementation phase마다 따로 적용됩니다.
+전체 workflow를 처음부터 다시 시작하는 횟수가 아닙니다.
+
+`commit mode`는 product commit 생성 방식을 정합니다.
+
+- `none`: 자동 commit을 만들지 않습니다.
+- `phase`: 계획된 implementation phase가 완료될 때마다 product change를 commit합니다.
+- `final`: `evaluate`가 `pass` 또는 `warn`이면 product commit 하나를 만듭니다.
+
+Commit helper는 기본적으로 `.phaseharness/` runtime state와 provider bridge
+파일을 product commit에서 제외합니다.
+
+일반 질문, 짧은 설명, 리뷰, 단발성 명령은 loop를 활성화하지 않습니다.
+Activation은 `.phaseharness/state/active.json`에
+`activation_source: "phaseharness_skill"`이 있을 때만 성립합니다.
+
+대화가 끊기면 다음 세션에서 `phaseharness` skill을 다시 호출해 active run을
+이어가라고 요청합니다. Resume도 명시적이어야 하므로 새 세션의 일반 질문이
+loop를 다시 시작하지 않습니다.
 
 ## State 위치
 
-Task state는 `tasks/` 아래에 저장되며, 설치된 저장소에서는 기본적으로
-gitignored됩니다.
+Canonical harness 파일과 runtime state는 모두 `.phaseharness/` 아래에 둡니다.
 
-Canonical harness 파일은 `.agent-harness/` 아래에 있습니다. Claude와 Codex
-runtime bridge는 이 canonical source에서 생성됩니다.
+- `.phaseharness/bin/`: state, hook, install, commit helper
+- `.phaseharness/hooks/`: provider hook wrapper
+- `.phaseharness/skills/phaseharness/`: skill 지침
+- `.phaseharness/subagents/`: phase별 subagent 지침
+- `.phaseharness/runs/`: run별 artifact와 state
+- `.phaseharness/state/`: active run pointer와 run index
 
-Harness를 수정할 때는 `.agent-harness/`를 수정하세요. `.claude/`, `.agents/`,
-`.codex/` 아래 generated bridge file은 runtime output으로 취급합니다.
+`.phaseharness/` 밖에 남는 파일은 provider가 요구하는 hook entry, skill symlink,
+provider-native subagent bridge뿐입니다.
+
+- `.claude/settings.json`
+- `.codex/config.toml`
+- `.codex/hooks.json` 또는 Codex inline hook config
+- `.claude/skills/phaseharness`
+- `.agents/skills/phaseharness`
+- `.claude/agents/phaseharness-*.md`
+- `.codex/agents/phaseharness-*.toml`
 
 ## 개발
 
@@ -131,7 +98,7 @@ Harness를 수정할 때는 `.agent-harness/`를 수정하세요. `.claude/`, `.
 
 ```bash
 python3 tests/smoke_install.py
-python3 -m py_compile core/scripts/*.py core/.agent-harness/providers/*.py tests/smoke_install.py
+python3 -m py_compile core/.phaseharness/bin/*.py tests/smoke_install.py
 ```
 
 구현 세부사항은 `SPEC.md`와 `spec/`를 참고하세요.

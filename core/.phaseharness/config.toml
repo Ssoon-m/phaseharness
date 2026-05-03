@@ -1,0 +1,15 @@
+schema_version = 1
+name = "phaseharness"
+
+[workflow]
+phase_order = ["clarify", "context_gather", "plan", "generate", "evaluate"]
+loop_count = 2
+max_attempts_per_phase = 2
+commit_mode = "none"
+commit_modes = ["none", "final", "phase"]
+
+[hooks]
+timeout_sec = 30
+
+[bridges]
+skills_mode = "symlink"

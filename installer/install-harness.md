@@ -2,11 +2,14 @@
 
 Use this document in the target repository session.
 
-You are an agent running at the target repository root. Install the canonical provider-neutral harness from this project. Do not redesign the harness from scratch.
+You are an agent running at the target repository root. Install the canonical
+phaseharness core from this project. This is an installable project: copy the
+canonical harness into the target repository and wire provider integrations
+from that source.
 
 ## 0. Source
 
-The canonical phaseloop source is:
+The canonical source is:
 
 ```text
 https://github.com/Ssoon-m/phaseloop
@@ -20,10 +23,8 @@ https://github.com/Ssoon-m/phaseloop.git
 
 Optional overrides:
 
-- `HARNESS_SOURCE`: path to a local checkout of phaseloop, useful for local development
+- `HARNESS_SOURCE`: absolute path to a local checkout of this repository
 - `HARNESS_REPO_URL`: alternate git URL, useful for forks
-
-Do not invent a harness implementation from this installer document. Install from the canonical source or an explicit override.
 
 Local development override:
 
@@ -57,49 +58,32 @@ Stop if:
 - `python3` is unavailable
 - both `claude` and `codex` are unavailable
 
-Dirty worktree is allowed, but do not overwrite unrelated user changes. If a target harness path already exists, inspect it before merging.
+Dirty worktree is allowed, but do not overwrite unrelated user changes.
 
-Harness-owned target paths:
+Phaseharness-owned target paths:
 
-- `.agent-harness/`
-- `.agent-harness/.gitignore`
-- `.claude/agents/`
-- `.claude/skills`
-- `.agents/skills`
-- `.codex/agents/`
-- `.claude/hooks/phaseloop-sync-bridges.sh`
-- `.codex/hooks/phaseloop-sync-bridges.sh`
-- `.claude/settings.json` phaseloop hook entries only
-- `.codex/hooks.json` phaseloop hook entries only
-- `.codex/config.toml` phaseloop hook entries and `codex_hooks` flag only
-- `scripts/_utils.py`
-- `scripts/commit-result.py`
-- `scripts/gen-bridges.py`
-- `scripts/gen-docs-diff.py`
-- `scripts/install-hooks.py`
-- `scripts/run-phases.py`
-- `scripts/run-workflow.py`
-- `scripts/sync-bridges.py`
-- `docs/mission.md`
-- `docs/spec.md`
-- `docs/testing.md`
-- `docs/user-intervention.md`
-- `tasks/.gitignore`
-- `tasks/index.json`
+- `.phaseharness/`
+- `.claude/settings.json` phaseharness `Stop` hook entry only
+- `.codex/config.toml` `codex_hooks` flag and phaseharness inline hook block only
+- `.codex/hooks.json` phaseharness `Stop` hook entry only
+- `.claude/skills/phaseharness`
+- `.agents/skills/phaseharness`
+- `.claude/agents/phaseharness-*.md`
+- `.codex/agents/phaseharness-*.toml`
 
 ## 2. Resolve Harness Source
 
 If `HARNESS_SOURCE` is set, verify:
 
 ```bash
-test -d "$HARNESS_SOURCE/core"
-test -f "$HARNESS_SOURCE/core/.agent-harness/config.toml"
-test -f "$HARNESS_SOURCE/core/scripts/run-workflow.py"
-test -f "$HARNESS_SOURCE/core/scripts/commit-result.py"
-test -f "$HARNESS_SOURCE/core/scripts/install-hooks.py"
+test -d "$HARNESS_SOURCE/core/.phaseharness"
+test -f "$HARNESS_SOURCE/core/.phaseharness/config.toml"
+test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-hook.py"
+test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-install-hooks.py"
+test -f "$HARNESS_SOURCE/core/.phaseharness/skills/phaseharness/SKILL.md"
 ```
 
-If `HARNESS_SOURCE` is not set, clone phaseloop to a temp directory:
+If `HARNESS_SOURCE` is not set, clone to a temp directory:
 
 ```bash
 HARNESS_REPO_URL="${HARNESS_REPO_URL:-https://github.com/Ssoon-m/phaseloop.git}"
@@ -111,188 +95,177 @@ If the checks fail, stop. Do not proceed from a partial source.
 
 ## 3. Install Canonical Core
 
-Create target directories:
+Create the target harness directory and copy the canonical implementation:
 
 ```bash
-mkdir -p .agent-harness scripts docs tasks
+mkdir -p .phaseharness
+cp -R "$HARNESS_SOURCE/core/.phaseharness/." .phaseharness/
+chmod +x .phaseharness/bin/*.py .phaseharness/hooks/*.sh
 ```
 
-Copy or merge the canonical implementation:
+All phaseharness-owned runtime state, docs, prompts, subagent instructions,
+hooks, and scripts must live under `.phaseharness/`.
+
+## 4. Initialize State
+
+Ensure state directories exist:
 
 ```bash
-cp -R "$HARNESS_SOURCE/core/.agent-harness/." .agent-harness/
-cp "$HARNESS_SOURCE/core/scripts/_utils.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/commit-result.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/gen-bridges.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/gen-docs-diff.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/install-hooks.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/run-phases.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/run-workflow.py" scripts/
-cp "$HARNESS_SOURCE/core/scripts/sync-bridges.py" scripts/
+mkdir -p .phaseharness/state .phaseharness/runs
 ```
 
-If any destination already exists and differs, do not blindly overwrite. Read the diff and preserve local project-specific changes unless they are clearly stale generated bridge files.
-
-## 4. Prepare Project Context Docs
-
-The harness expects:
-
-- `docs/mission.md`
-- `docs/spec.md`
-- `docs/testing.md`
-- `docs/user-intervention.md`
-
-For each missing file, start from the template in `$HARNESS_SOURCE/core/templates/docs/`, then adapt it by reading the target repository. Do not leave empty placeholders when repository context is available.
-
-If context is insufficient, write the unknowns explicitly instead of guessing.
-
-## 5. Initialize State
-
-Create `tasks/index.json` if missing:
+If `.phaseharness/state/active.json` is missing, create it:
 
 ```json
 {
-  "tasks": []
+  "schema_version": 1,
+  "active_run": null,
+  "activation_source": null,
+  "status": "inactive",
+  "session_id": null,
+  "provider": null
 }
 ```
 
-Create `tasks/.gitignore` if missing so runtime task artifacts remain local by default:
+If `.phaseharness/state/index.json` is missing, create it:
 
-```bash
-test -f tasks/.gitignore || cp "$HARNESS_SOURCE/core/templates/tasks/.gitignore" tasks/.gitignore
+```json
+{
+  "schema_version": 1,
+  "runs": []
+}
 ```
 
-## 6. Configure Providers
+Do not activate a run during installation. The loop activates only when the user
+explicitly invokes the `phaseharness` skill.
 
-Edit `.agent-harness/config.toml` if needed.
-
-Provider selection rules:
-
-- only `claude` available: `default_provider = "claude"`
-- only `codex` available: `default_provider = "codex"`
-- both available: prefer the current runtime, keep the other as fallback
-
-Headless policy:
-
-- use `AGENT_HEADLESS=1`
-- use workspace-write for workflow generation and phase execution
-- do not use interactive approval as the headless standard
-
-## 7. Generate Bridges
+## 5. Install Stop Hooks And Skill Bridges
 
 Run:
 
 ```bash
-python3 scripts/gen-bridges.py
+python3 .phaseharness/bin/phaseharness-install-hooks.py
 ```
 
-Expected generated paths:
-
-- `.claude/skills` symlink or copy
-- `.agents/skills` symlink or copy
-- `.claude/agents/phase-{clarify,context,plan,generate,evaluate}.md`
-- `.codex/agents/phase-{clarify,context,plan,generate,evaluate}.toml`
-
-These are runtime-specific bridges. The canonical source remains `.agent-harness/skills` and `.agent-harness/roles`.
-
-## 8. Install Bridge Sync Hooks
-
-Run:
-
-```bash
-python3 scripts/install-hooks.py
-```
+This command also creates missing `.phaseharness/state/active.json` and
+`.phaseharness/state/index.json` without activating a run.
 
 Expected managed paths:
 
-- `.claude/hooks/phaseloop-sync-bridges.sh`
-- `.codex/hooks/phaseloop-sync-bridges.sh`
+- `.claude/settings.json`
+- `.codex/config.toml`
+- `.codex/hooks.json` unless the target already uses Codex inline hooks only
+- `.claude/skills/phaseharness`
+- `.agents/skills/phaseharness`
+- `.claude/agents/phaseharness-*.md`
+- `.codex/agents/phaseharness-*.toml`
+
+The installer generates provider-native subagent bridge files from
+`.phaseharness/subagents/`:
+
+- Claude Code project subagents: `.claude/agents/*.md`
+- Codex project custom agents: `.codex/agents/*.toml`
 
 The installer must preserve user hooks:
 
-- If `.claude/settings.json` already has hooks, keep them and add only phaseloop hook entries.
-- If `.codex/hooks.json` already exists, keep it and add only phaseloop hook entries.
-- If `.codex/config.toml` already uses inline hooks and `.codex/hooks.json` is absent, append one managed phaseloop hook block.
-- If `.codex/hooks.json` and inline Codex hooks both already exist, merge phaseloop into `hooks.json`; do not create another representation.
+- If `.claude/settings.json` already has hooks, keep them and add only the
+  phaseharness `Stop` hook entry.
+- If `.codex/hooks.json` already exists, keep it and add only the phaseharness
+  `Stop` hook entry.
+- If `.codex/config.toml` already uses inline hooks and `.codex/hooks.json` is
+  absent, append one managed phaseharness `Stop` hook block there.
 - If existing hook JSON is invalid, stop and ask the user before editing it.
 
-The common hook command is `scripts/sync-bridges.py --hook`. Runtime hook files are only thin adapters. When `.agent-harness/` changes, the hook regenerates `.claude/`, `.agents/`, and `.codex/` bridge files by running `scripts/gen-bridges.py`.
+Codex requires:
 
-## 9. Smoke Verification
+```toml
+[features]
+codex_hooks = true
+```
+
+Project-local Codex hooks load only when the project `.codex/` layer is trusted.
+Mention this in the final report if Codex is available.
+
+## 6. Activation Contract
+
+The installed Stop hook must be inert for normal questions.
+
+The hook may continue work only when all of these are true:
+
+- `.phaseharness/state/active.json` exists
+- `status` is `active`
+- `activation_source` is `phaseharness_skill`
+- `active_run` points to an existing run directory
+
+The hook must not inspect a normal user prompt and decide to start a run. Run
+creation belongs only to the `phaseharness` skill.
+
+If a conversation is interrupted, resume also belongs to the skill. The skill
+records a resume request in `.phaseharness/runs/<run-id>/state.json`; the next
+Stop hook binds the new provider `session_id` and continues from file state.
+
+## 7. Smoke Verification
 
 Run:
 
 ```bash
-python3 scripts/run-workflow.py --help
-python3 scripts/run-phases.py --help
-python3 scripts/commit-result.py --help
-python3 scripts/install-hooks.py --help
-python3 scripts/sync-bridges.py --help
-python3 scripts/gen-docs-diff.py --help
-python3 scripts/gen-bridges.py --help
-python3 -m py_compile scripts/*.py .agent-harness/providers/*.py
+python3 .phaseharness/bin/phaseharness-state.py --help
+python3 .phaseharness/bin/phaseharness-hook.py --help
+python3 .phaseharness/bin/phaseharness-install-hooks.py --help
+python3 .phaseharness/bin/commit-result.py --help
+python3 -m py_compile .phaseharness/bin/*.py
 command -v claude || true
 command -v codex || true
 ```
 
-The default runtime strategy is balanced: clarify runs in the current
-conversation, one analysis agent session handles context and plan, build agent
-session(s) handle implementation phases, and one evaluate agent session handles
-final verification.
+Optional hook no-op checks:
 
-## 10. README Note
-
-Do not edit the target repository README by default.
-
-If the user asks how to document the install, include this optional snippet in
-the final report instead of applying it automatically:
-
-```markdown
-## Agent Harness
-
-This project uses phaseloop. Harness state is stored in `tasks/` and
-task artifacts, canonical configuration lives under `.agent-harness/`, and
-runtime bridges are generated under `.claude/`, `.agents/`, and `.codex/`.
-Bridge sync hooks regenerate runtime bridges when `.agent-harness/` changes.
-phaseloop runs clarify in the current conversation, then uses balanced
-analysis, build, and evaluate agent sessions.
-Completed phaseloop results can be committed with the `commit` skill. Automatic
-commit is controlled by commit mode `none`, `final`, or `phase`, with `none` as
-the default. Product commits exclude phaseloop task artifacts by default.
+```bash
+printf '{"cwd":"%s","hook_event_name":"Stop","stop_hook_active":false}' "$PWD" | .phaseharness/hooks/claude-stop.sh
+printf '{"cwd":"%s","hook_event_name":"Stop","stop_hook_active":false}' "$PWD" | .phaseharness/hooks/codex-stop.sh
 ```
 
-## 11. Final Report
+Claude no-op should produce no output. Codex no-op should produce JSON with
+`continue: true`.
+
+## 8. Final Report
 
 Use this final report shape. Keep the next step skill-first and copy/pasteable.
-Do not add a "First command to run" section.
 
 ````text
-Installed phaseloop from the canonical installer source:
+Installed phaseharness from:
 https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
 
 Created/updated:
-- <short list of installed harness paths>
+- .phaseharness/
+- .claude/settings.json phaseharness Stop hook entry
+- .codex/config.toml codex_hooks flag
+- .codex/hooks.json or inline Codex Stop hook entry
+- .claude/skills/phaseharness
+- .agents/skills/phaseharness
+- .claude/agents/phaseharness-*.md
+- .codex/agents/phaseharness-*.toml
 
 Key install details:
-- Default provider: <provider>
-- Fallback provider: <provider or none>
-- Bridges: <symlink or copy>
-- Hooks: <installed/updated and whether existing hooks were preserved>
-- Commit support: installed commit skill and scripts/commit-result.py
-- Smoke verification: <passed or failed; mention non-fatal warnings separately>
+- All canonical harness files live under .phaseharness/
+- Stop hooks are inert until the phaseharness skill creates an active run
+- Provider-native subagent bridge files were generated from .phaseharness/subagents/
+- The skill asks for loop count, max attempts per phase, and commit mode before
+  creating a run when any value is omitted
+- Existing user hooks were preserved
+- Smoke verification: <passed or failed>
 
-Docs still needing human clarification:
-- <items, or "none">
-
-Next phaseloop prompt to paste:
+Next phaseharness prompt to paste:
 ```text
-Use the phaseloop skill to implement <request> with max attempts 2 and commit mode none.
+Use the phaseharness skill to implement <request> with loop count 2, max attempts per phase 2, and commit mode none.
 ```
 
-Suggested commit message:
-chore(harness): install provider-neutral agent harness
+Option meanings:
+- loop count: maximum number of `generate -> evaluate` build-review cycles.
+- max attempts per phase: retry budget for each planned implementation phase,
+  not a whole-workflow restart count.
+- commit mode:
+  - `none`: do not create commits automatically.
+  - `phase`: commit product changes after each planned implementation phase.
+  - `final`: create one product commit after `evaluate` passes or warns.
 ````
-
-Do not present `scripts/run-workflow.py`, `scripts/run-phases.py`, or
-`AGENT_HEADLESS=1` as the recommended next step. Those are internal runner
-details for the skill unless the user explicitly asks to run the CLI.

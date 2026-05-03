@@ -1,4 +1,0 @@
-name = "phase-plan"
-description = "Converts clarified scope and gathered context into ordered implementation phases with concrete acceptance criteria."
-tools_policy = "read-write"
-sandbox_mode = "workspace-write"
