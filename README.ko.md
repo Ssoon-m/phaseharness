@@ -81,6 +81,13 @@ Canonical harness 파일과 runtime state는 모두 `.phaseharness/` 아래에 �
 - `.phaseharness/runs/`: run별 artifact와 state
 - `.phaseharness/state/`: active run pointer와 run index
 
+`.phaseharness/` SSOT 기준으로 provider bridge 파일을 다시 맞추려면 다음을
+실행합니다.
+
+```bash
+python3 .phaseharness/bin/phaseharness-sync-bridges.py
+```
+
 `.phaseharness/` 밖에 남는 파일은 provider가 요구하는 hook entry, skill symlink,
 provider-native subagent bridge뿐입니다.
 

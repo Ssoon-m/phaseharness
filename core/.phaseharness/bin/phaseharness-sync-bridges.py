@@ -524,7 +524,7 @@ def ensure_state_files(root: Path) -> list[Path]:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install phaseharness Stop hooks and skill bridges.")
+    parser = argparse.ArgumentParser(description="Sync phaseharness provider hooks, skills, and subagent bridges.")
     parser.add_argument("--runtime", choices=["all", "claude", "codex"], default="all")
     parser.add_argument("--skip-skills", action="store_true")
     parser.add_argument("--skip-subagents", action="store_true")

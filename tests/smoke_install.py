@@ -52,7 +52,7 @@ def init_state(target: Path) -> None:
 def install_fixture(target: Path) -> None:
     copy_phaseharness(target)
     init_state(target)
-    run(["chmod", "+x", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-install-hooks.py", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/commit-result.py", ".phaseharness/hooks/claude-stop.sh", ".phaseharness/hooks/codex-stop.sh"], target)
+    run(["chmod", "+x", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-sync-bridges.py", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/commit-result.py", ".phaseharness/hooks/claude-stop.sh", ".phaseharness/hooks/codex-stop.sh"], target)
 
 
 def write_existing_hooks(target: Path) -> None:
@@ -136,7 +136,7 @@ def assert_inline_codex_merge(tmp: Path) -> None:
         "type = \"command\"\n"
         "command = \"echo existing-inline-codex-hook\"\n"
     )
-    run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py", "--runtime", "codex"], target)
+    run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py", "--runtime", "codex"], target)
     config = (target / ".codex" / "config.toml").read_text()
     if "existing-inline-codex-hook" not in config:
         raise SystemExit("existing inline Codex hook was not preserved")
@@ -172,7 +172,7 @@ def assert_permission_config_is_ssot(tmp: Path) -> None:
     config = config.replace('writable_roots = ["."]', 'writable_roots = [".", "../shared"]')
     config_path.write_text(config)
 
-    run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
+    run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py"], target)
     claude = json.loads((target / ".claude" / "settings.json").read_text())
     if claude.get("permissions", {}).get("defaultMode") != "acceptEdits":
         raise SystemExit("Claude permissions were not generated from .phaseharness/config.toml")
@@ -671,8 +671,8 @@ def main() -> int:
         assert_inline_codex_merge(tmp_path)
         assert_permission_config_is_ssot(tmp_path)
 
-        run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
-        run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py"], target)
         assert_hook_merge(target)
         assert_no_legacy_paths(target)
         assert_native_subagents(target)
@@ -680,7 +680,7 @@ def main() -> int:
 
         expected = [
             ".phaseharness/bin/phaseharness-hook.py",
-            ".phaseharness/bin/phaseharness-install-hooks.py",
+            ".phaseharness/bin/phaseharness-sync-bridges.py",
             ".phaseharness/bin/phaseharness-state.py",
             ".phaseharness/bin/commit-result.py",
             ".phaseharness/hooks/claude-stop.sh",
@@ -707,9 +707,9 @@ def main() -> int:
 
         run(["python3", ".phaseharness/bin/phaseharness-state.py", "--help"], target)
         run(["python3", ".phaseharness/bin/phaseharness-hook.py", "--help"], target)
-        run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py", "--help"], target)
+        run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py", "--help"], target)
         run(["python3", ".phaseharness/bin/commit-result.py", "--help"], target)
-        run(["python3", "-m", "py_compile", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-install-hooks.py", ".phaseharness/bin/commit-result.py"], target)
+        run(["python3", "-m", "py_compile", ".phaseharness/bin/phaseharness-state.py", ".phaseharness/bin/phaseharness-hook.py", ".phaseharness/bin/phaseharness-sync-bridges.py", ".phaseharness/bin/commit-result.py"], target)
     return 0
 
 

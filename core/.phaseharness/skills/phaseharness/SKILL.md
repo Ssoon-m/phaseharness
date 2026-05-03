@@ -30,13 +30,20 @@ with `activation_source: "phaseharness_skill"`.
 ## Start A Run
 
 1. Identify the concrete user request.
-2. Check whether an active or resumable run already exists:
+2. Sync provider bridge files from `.phaseharness/` SSOT before reading or
+   mutating run state:
+
+```bash
+python3 .phaseharness/bin/phaseharness-sync-bridges.py
+```
+
+3. Check whether an active or resumable run already exists:
 
 ```bash
 python3 .phaseharness/bin/phaseharness-state.py status --json
 ```
 
-3. If a run is active and the user wants to continue it, do not create a new
+4. If a run is active and the user wants to continue it, do not create a new
    run. Request resume instead:
 
 ```bash
@@ -46,17 +53,17 @@ python3 .phaseharness/bin/phaseharness-state.py resume --summary "<what the user
 Then stop normally. The `Stop` hook will attach the current provider session and
 continue from file state.
 
-4. For a new run, determine `loop_count` before starting.
+5. For a new run, determine `loop_count` before starting.
    - If the user already specified it, use that positive integer.
    - If not, ask once: `How many generate/evaluate loops should this run allow? Default is 2.`
    - Do not start until the user chooses a number or explicitly accepts the
      default.
-5. Determine `max_attempts_per_phase` before starting.
+6. Determine `max_attempts_per_phase` before starting.
    - If the user already specified it, use that positive integer.
    - If not, ask once: `How many attempts should each implementation phase get? Default is 2.`
    - Do not start until the user chooses a number or explicitly accepts the
      default.
-6. Determine `commit_mode` before starting.
+7. Determine `commit_mode` before starting.
    - If the user already specified `none`, `final`, or `phase`, use that value.
    - If not, ask once: `Commit mode for this phaseharness task? none, final, or phase. Default is none.`
    - `none`: do not create product commits automatically.
@@ -64,7 +71,7 @@ continue from file state.
    - `phase`: create a product commit after each planned implementation phase completes.
    - Do not start until the user chooses a mode or explicitly accepts the
      default.
-7. If any value is missing, ask using this exact style. Do not show only raw
+8. If any value is missing, ask using this exact style. Do not show only raw
    variable names:
 
 ```text
@@ -81,15 +88,15 @@ phaseharness 실행 옵션을 정해야 합니다. 기본값으로 시작해도 
 원하면 `loop count 3, max attempts per phase 2, commit mode final`처럼 답해주세요.
 ```
 
-8. Create an active run:
+9. Create an active run:
 
 ```bash
 python3 .phaseharness/bin/phaseharness-state.py start --request "<request>" --loop-count <loops> --max-attempts-per-phase <attempts> --commit-mode <mode>
 ```
 
-9. Use the printed run id as `<run-id>`.
-10. Do not perform `clarify` in the current conversation.
-11. Stop normally. The project `Stop` hook will read the active run and continue
+10. Use the printed run id as `<run-id>`.
+11. Do not perform `clarify` in the current conversation.
+12. Stop normally. The project `Stop` hook will read the active run and continue
    with `clarify` through the provider-native phaseharness subagent when
    supported.
 

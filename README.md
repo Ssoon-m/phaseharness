@@ -82,6 +82,13 @@ All canonical harness files and runtime state live under `.phaseharness/`:
 - `.phaseharness/runs/`: per-run artifacts and state
 - `.phaseharness/state/`: active run pointer and run index
 
+Run this command to resync provider bridge files from the `.phaseharness/`
+SSOT:
+
+```bash
+python3 .phaseharness/bin/phaseharness-sync-bridges.py
+```
+
 Provider-required files outside `.phaseharness/` are limited to managed hook
 entries, skill symlinks, and provider-native subagent bridge files:
 

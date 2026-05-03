@@ -18,9 +18,13 @@ integration, permission, and bridge files:
 Provider-native subagent bridge files are generated from `.phaseharness/subagents/`.
 They are bridge/config artifacts, not canonical source.
 
+`.phaseharness/bin/phaseharness-sync-bridges.py` is the primary bridge sync entrypoint.
+It reads `.phaseharness/config.toml`, `.phaseharness/subagents/`, and
+`.phaseharness/skills/phaseharness/`, then regenerates provider bridge files.
+
 ## Hook Merge Rules
 
-The install helper must:
+The bridge sync command must:
 
 - preserve existing user hooks
 - add or replace only entries whose command contains `phaseharness-hook.py`

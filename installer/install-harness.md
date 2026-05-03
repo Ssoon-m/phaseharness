@@ -79,7 +79,7 @@ If `HARNESS_SOURCE` is set, verify:
 test -d "$HARNESS_SOURCE/core/.phaseharness"
 test -f "$HARNESS_SOURCE/core/.phaseharness/config.toml"
 test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-hook.py"
-test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-install-hooks.py"
+test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-sync-bridges.py"
 test -f "$HARNESS_SOURCE/core/.phaseharness/skills/phaseharness/SKILL.md"
 ```
 
@@ -144,7 +144,7 @@ explicitly invokes the `phaseharness` skill.
 Run:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-install-hooks.py
+python3 .phaseharness/bin/phaseharness-sync-bridges.py
 ```
 
 This command also creates missing `.phaseharness/state/active.json` and
@@ -152,6 +152,7 @@ This command also creates missing `.phaseharness/state/active.json` and
 
 Expected managed paths:
 
+- `.phaseharness/bin/phaseharness-sync-bridges.py`
 - `.claude/settings.json`
 - `.codex/config.toml`
 - `.codex/hooks.json` unless the target already uses Codex inline hooks only
@@ -232,7 +233,7 @@ Run:
 ```bash
 python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
-python3 .phaseharness/bin/phaseharness-install-hooks.py --help
+python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
 python3 .phaseharness/bin/commit-result.py --help
 python3 -m py_compile .phaseharness/bin/*.py
 command -v claude || true
