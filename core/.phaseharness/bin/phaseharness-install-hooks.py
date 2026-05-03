@@ -11,7 +11,6 @@ from typing import Any
 
 
 HOOK_MARKER = ".phaseharness"
-HOOK_TIMEOUT_SEC = 30
 SUBAGENTS = {
     "clarify": {
         "file": "clarify.md",
@@ -45,6 +44,8 @@ SUBAGENTS = {
     },
 }
 
+CLAUDE_AGENT_ALLOW_RULES = [f"Agent({item['claude_name']})" for item in SUBAGENTS.values()]
+
 
 def find_project_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
@@ -69,6 +70,92 @@ def load_json_object(path: Path) -> dict[str, Any]:
     return data
 
 
+def load_harness_config(root: Path) -> dict[str, Any]:
+    path = root / ".phaseharness" / "config.toml"
+    if not path.exists():
+        raise RuntimeError(f"missing phaseharness config: {path}")
+    return parse_simple_toml(path.read_text(), path)
+
+
+def parse_simple_toml_value(value: str, path: Path, line_number: int) -> Any:
+    value = value.strip()
+    if value in ("true", "false"):
+        return value == "true"
+    if value.startswith('"') and value.endswith('"'):
+        return value[1:-1]
+    if value.startswith("[") and value.endswith("]"):
+        inner = value[1:-1].strip()
+        if not inner:
+            return []
+        return [parse_simple_toml_value(part.strip(), path, line_number) for part in inner.split(",")]
+    if re.fullmatch(r"-?\d+", value):
+        return int(value)
+    raise RuntimeError(f"unsupported TOML value in {path}:{line_number}: {value}")
+
+
+def parse_simple_toml(text: str, path: Path) -> dict[str, Any]:
+    data: dict[str, Any] = {}
+    current = data
+    for line_number, raw in enumerate(text.splitlines(), start=1):
+        line = raw.strip()
+        if not line or line.startswith("#"):
+            continue
+        if line.startswith("[") and line.endswith("]"):
+            current = data
+            for part in line[1:-1].split("."):
+                key = part.strip()
+                if not key:
+                    raise RuntimeError(f"empty TOML section in {path}:{line_number}")
+                current = current.setdefault(key, {})
+                if not isinstance(current, dict):
+                    raise RuntimeError(f"TOML section conflicts with value in {path}:{line_number}: {key}")
+            continue
+        if "=" not in line:
+            raise RuntimeError(f"unsupported TOML line in {path}:{line_number}: {raw}")
+        key, value = line.split("=", 1)
+        key = key.strip()
+        if not key:
+            raise RuntimeError(f"empty TOML key in {path}:{line_number}")
+        current[key] = parse_simple_toml_value(value, path, line_number)
+    return data
+
+
+def nested_config(data: dict[str, Any], *keys: str) -> dict[str, Any]:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return {}
+        current = current.get(key, {})
+    return current if isinstance(current, dict) else {}
+
+
+def config_int(data: dict[str, Any], default: int, *keys: str) -> int:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return int(current) if current is not None else default
+
+
+def config_str(data: dict[str, Any], default: str, *keys: str) -> str:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return str(current) if current is not None else default
+
+
+def config_bool(data: dict[str, Any], default: bool, *keys: str) -> bool:
+    current: Any = data
+    for key in keys:
+        if not isinstance(current, dict):
+            return default
+        current = current.get(key)
+    return bool(current) if current is not None else default
+
+
 def write_json(path: Path, data: dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
@@ -86,6 +173,24 @@ def toml_string(value: str) -> str:
 
 def toml_literal_multiline(value: str) -> str:
     return "'''\n" + value.replace("'''", "'''\"'\"'''") + "\n'''"
+
+
+def toml_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, int):
+        return str(value)
+    if isinstance(value, list):
+        return "[" + ", ".join(toml_value(item) for item in value) + "]"
+    return toml_string(str(value))
+
+
+def yaml_frontmatter_value(value: Any) -> str:
+    if isinstance(value, bool):
+        return "true" if value else "false"
+    if isinstance(value, list):
+        return ", ".join(str(item) for item in value)
+    return str(value)
 
 
 def command_for(runtime: str) -> str:
@@ -106,11 +211,11 @@ def command_for(runtime: str) -> str:
     raise ValueError(runtime)
 
 
-def hook_entry(runtime: str) -> dict[str, Any]:
+def hook_entry(runtime: str, config: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "type": "command",
         "command": command_for(runtime),
-        "timeout": HOOK_TIMEOUT_SEC,
+        "timeout": config_int(config, 30, "hooks", "timeout_sec"),
     }
     if runtime == "codex":
         entry["statusMessage"] = "Checking phaseharness state"
@@ -145,11 +250,31 @@ def merge_stop_hook(data: dict[str, Any], entry: dict[str, Any]) -> None:
     entries.append(entry)
 
 
-def install_claude_hooks(root: Path) -> list[Path]:
+def ensure_claude_permissions(data: dict[str, Any], config: dict[str, Any]) -> None:
+    permissions = data.setdefault("permissions", {})
+    if not isinstance(permissions, dict):
+        raise RuntimeError("permissions must be an object")
+    configured = nested_config(config, "permissions", "claude", "settings", "permissions")
+    for key, value in configured.items():
+        permissions[key] = value
+    if "defaultMode" not in permissions:
+        permissions["defaultMode"] = "bypassPermissions"
+    phaseharness = nested_config(config, "permissions", "claude", "phaseharness")
+    if config_bool(phaseharness, True, "allowManagedSubagents"):
+        allow = permissions.setdefault("allow", [])
+        if not isinstance(allow, list):
+            raise RuntimeError("permissions.allow must be a list")
+        for rule in CLAUDE_AGENT_ALLOW_RULES:
+            if rule not in allow:
+                allow.append(rule)
+
+
+def install_claude_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     make_executable(root / ".phaseharness" / "hooks" / "claude-stop.sh")
     settings_path = root / ".claude" / "settings.json"
     data = load_json_object(settings_path)
-    merge_stop_hook(data, hook_entry("claude"))
+    merge_stop_hook(data, hook_entry("claude", config))
+    ensure_claude_permissions(data, config)
     write_json(settings_path, data)
     return [settings_path]
 
@@ -194,7 +319,58 @@ def remove_managed_toml_block(text: str) -> str:
     return pattern.sub("\n", text).rstrip() + "\n"
 
 
-def append_codex_inline_hook(config_path: Path) -> None:
+def remove_managed_permissions_block(text: str) -> str:
+    pattern = re.compile(
+        r"\n?# BEGIN phaseharness managed permissions\n.*?# END phaseharness managed permissions\n?",
+        re.DOTALL,
+    )
+    return pattern.sub("\n", text).rstrip() + "\n"
+
+
+def remove_root_toml_keys(text: str, keys: set[str]) -> str:
+    lines = text.splitlines()
+    output: list[str] = []
+    in_root = True
+    key_pattern = re.compile(r"^\s*([A-Za-z0-9_.-]+)\s*=")
+    section_pattern = re.compile(r"^\s*\[")
+    for line in lines:
+        if section_pattern.match(line):
+            in_root = False
+        if in_root:
+            match = key_pattern.match(line)
+            if match and match.group(1) in keys:
+                continue
+        output.append(line)
+    return "\n".join(output).rstrip() + "\n"
+
+
+def ensure_codex_permissions(config_path: Path, config: dict[str, Any]) -> None:
+    text = config_path.read_text() if config_path.exists() else ""
+    text = remove_managed_permissions_block(text)
+    text = remove_root_toml_keys(
+        text,
+        {
+            "approval_policy",
+            "sandbox_mode",
+            "sandbox_workspace_write.network_access",
+            "sandbox_workspace_write.writable_roots",
+        },
+    )
+    codex = nested_config(config, "permissions", "codex", "config")
+    sandbox = nested_config(codex, "sandbox_workspace_write")
+    lines = [
+        "# BEGIN phaseharness managed permissions",
+        f"approval_policy = {toml_value(codex.get('approval_policy', 'never'))}",
+        f"sandbox_mode = {toml_value(codex.get('sandbox_mode', 'danger-full-access'))}",
+    ]
+    for key, value in sandbox.items():
+        lines.append(f"sandbox_workspace_write.{key} = {toml_value(value)}")
+    lines.append("# END phaseharness managed permissions")
+    block = "\n".join(lines) + "\n"
+    config_path.write_text(block + ("\n" + text.lstrip() if text.strip() else ""))
+
+
+def append_codex_inline_hook(config_path: Path, config: dict[str, Any]) -> None:
     text = config_path.read_text() if config_path.exists() else ""
     text = remove_managed_toml_block(text)
     command = command_for("codex")
@@ -204,28 +380,29 @@ def append_codex_inline_hook(config_path: Path) -> None:
 [[hooks.Stop.hooks]]
 type = "command"
 command = {toml_string(command)}
-timeout = {HOOK_TIMEOUT_SEC}
+timeout = {config_int(config, 30, "hooks", "timeout_sec")}
 statusMessage = "Checking phaseharness state"
 # END phaseharness managed hook
 """
     config_path.write_text(text.rstrip() + "\n" + block.lstrip())
 
 
-def install_codex_hooks(root: Path) -> list[Path]:
+def install_codex_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     make_executable(root / ".phaseharness" / "hooks" / "codex-stop.sh")
     config_path = root / ".codex" / "config.toml"
     hooks_path = root / ".codex" / "hooks.json"
     ensure_codex_feature_flag(config_path)
+    ensure_codex_permissions(config_path, config)
     changed = [config_path]
 
     if hooks_path.exists() or not has_inline_codex_hooks(config_path):
         data = load_json_object(hooks_path)
-        merge_stop_hook(data, hook_entry("codex"))
+        merge_stop_hook(data, hook_entry("codex", config))
         write_json(hooks_path, data)
         changed.append(hooks_path)
         return changed
 
-    append_codex_inline_hook(config_path)
+    append_codex_inline_hook(config_path, config)
     return changed
 
 
@@ -267,14 +444,20 @@ def canonical_subagent_prompt(root: Path, item: dict[str, str]) -> str:
     )
 
 
-def write_claude_subagent(root: Path, item: dict[str, str]) -> Path:
+def write_claude_subagent(root: Path, item: dict[str, str], config: dict[str, Any]) -> Path:
     target = root / ".claude" / "agents" / f"{item['claude_name']}.md"
     target.parent.mkdir(parents=True, exist_ok=True)
+    subagent_config = nested_config(config, "permissions", "claude", "subagents")
+    frontmatter = {
+        "name": item["claude_name"],
+        "description": item["description"],
+        "model": "inherit",
+        **subagent_config,
+    }
     content = (
         "---\n"
-        f"name: {item['claude_name']}\n"
-        f"description: {item['description']}\n"
-        "model: inherit\n"
+        + "".join(f"{key}: {yaml_frontmatter_value(value)}\n" for key, value in frontmatter.items())
+        +
         "---\n\n"
         f"{canonical_subagent_prompt(root, item)}"
     )
@@ -282,25 +465,35 @@ def write_claude_subagent(root: Path, item: dict[str, str]) -> Path:
     return target
 
 
-def write_codex_subagent(root: Path, item: dict[str, str]) -> Path:
+def write_codex_subagent(root: Path, item: dict[str, str], config: dict[str, Any]) -> Path:
     target = root / ".codex" / "agents" / f"{item['claude_name']}.toml"
     target.parent.mkdir(parents=True, exist_ok=True)
+    codex = nested_config(config, "permissions", "codex", "config")
+    sandbox = nested_config(codex, "sandbox_workspace_write")
+    permission_lines = [
+        f"approval_policy = {toml_value(codex.get('approval_policy', 'never'))}",
+        f"sandbox_mode = {toml_value(codex.get('sandbox_mode', 'danger-full-access'))}",
+    ]
+    for key, value in sandbox.items():
+        permission_lines.append(f"sandbox_workspace_write.{key} = {toml_value(value)}")
     content = (
         f"name = {toml_string(item['codex_name'])}\n"
         f"description = {toml_string(item['description'])}\n"
+        + "\n".join(permission_lines)
+        + "\n"
         f"developer_instructions = {toml_literal_multiline(canonical_subagent_prompt(root, item))}\n"
     )
     target.write_text(content)
     return target
 
 
-def install_subagent_bridges(root: Path, runtime: str) -> list[Path]:
+def install_subagent_bridges(root: Path, runtime: str, config: dict[str, Any]) -> list[Path]:
     changed: list[Path] = []
     for item in SUBAGENTS.values():
         if runtime in ("all", "claude"):
-            changed.append(write_claude_subagent(root, item))
+            changed.append(write_claude_subagent(root, item, config))
         if runtime in ("all", "codex"):
-            changed.append(write_codex_subagent(root, item))
+            changed.append(write_codex_subagent(root, item, config))
     return changed
 
 
@@ -338,15 +531,16 @@ def main() -> int:
     args = parser.parse_args()
 
     root = find_project_root()
+    config = load_harness_config(root)
     changed: list[Path] = ensure_state_files(root)
     if args.runtime in ("all", "claude"):
-        changed.extend(install_claude_hooks(root))
+        changed.extend(install_claude_hooks(root, config))
     if args.runtime in ("all", "codex"):
-        changed.extend(install_codex_hooks(root))
+        changed.extend(install_codex_hooks(root, config))
     if not args.skip_skills:
         changed.extend(install_skill_bridges(root))
     if not args.skip_subagents:
-        changed.extend(install_subagent_bridges(root, args.runtime))
+        changed.extend(install_subagent_bridges(root, args.runtime, config))
 
     for path in changed:
         print(path.relative_to(root))

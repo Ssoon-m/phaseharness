@@ -110,6 +110,27 @@ cannot invoke the subagent from a Stop-hook continuation, the run is set to
 `waiting_user` with a `subagent_unavailable` error instead of falling back to
 local execution.
 
+## Permission Behavior
+
+`.phaseharness/config.toml` is the SSOT for managed provider permissions. The
+permission tables intentionally mirror provider-native keys where practical:
+
+- `[permissions.claude.settings.permissions]` maps to
+  `.claude/settings.json` `permissions`.
+- `[permissions.claude.subagents]` maps to Claude Code subagent frontmatter.
+- `[permissions.codex.config]` maps to Codex config/custom-agent keys such as
+  `approval_policy`, `sandbox_mode`, and `sandbox_workspace_write.*`.
+
+The default profile is broad so each loop phase does not repeatedly stop for
+approvals.
+
+These settings are intentionally broad. Install phaseharness only into
+repositories where the provider is allowed to edit and run project commands
+without repeated approval prompts.
+After installation, users may lower these permission settings in
+`.phaseharness/config.toml` and rerun the installer if they prefer more approval
+prompts.
+
 ## Development
 
 Run local verification:

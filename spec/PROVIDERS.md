@@ -6,6 +6,11 @@ files.
 ## Claude Code
 
 Claude Code uses a project `Stop` hook entry in `.claude/settings.json`.
+Phaseharness-managed Claude settings are generated from
+`.phaseharness/config.toml` `[permissions.claude.settings.permissions]`.
+Claude subagent frontmatter is generated from `[permissions.claude.subagents]`.
+The default configuration sets `permissions.defaultMode` and subagent
+`permissionMode` to `bypassPermissions`.
 
 Continuation output:
 
@@ -26,6 +31,17 @@ The installer must set:
 ```toml
 [features]
 codex_hooks = true
+```
+
+The installer also generates Codex phaseharness permissions from
+`.phaseharness/config.toml` `[permissions.codex.config]`. The default
+configuration is:
+
+```toml
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+sandbox_workspace_write.network_access = true
+sandbox_workspace_write.writable_roots = ["."]
 ```
 
 Codex project hooks load only when the project config layer is trusted.

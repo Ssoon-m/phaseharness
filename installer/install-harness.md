@@ -63,9 +63,9 @@ Dirty worktree is allowed, but do not overwrite unrelated user changes.
 Phaseharness-owned target paths:
 
 - `.phaseharness/`
-- `.claude/settings.json` phaseharness `Stop` hook entry only
-- `.codex/config.toml` `codex_hooks` flag and phaseharness inline hook block only
-- `.codex/hooks.json` phaseharness `Stop` hook entry only
+- `.claude/settings.json` phaseharness `Stop` hook entry and managed permissions
+- `.codex/config.toml` `codex_hooks` flag, phaseharness inline hook block, and managed permissions
+- `.codex/hooks.json` phaseharness `Stop` hook entry
 - `.claude/skills/phaseharness`
 - `.agents/skills/phaseharness`
 - `.claude/agents/phaseharness-*.md`
@@ -172,6 +172,20 @@ phase-specific subagent call the parent agent's first required action. If
 subagent launch is unavailable from the Stop-hook continuation, the parent agent
 must not execute the phase locally; it must set the phase to `waiting_user` with
 a `subagent_unavailable` error.
+
+The installer must also grant provider permissions from the canonical
+`.phaseharness/config.toml` SSOT for the managed phaseharness loop. The config
+tables should follow provider-native key names where practical:
+
+- `[permissions.claude.settings.permissions]` maps to `.claude/settings.json`
+  `permissions`.
+- `[permissions.claude.subagents]` maps to Claude Code subagent frontmatter.
+- `[permissions.codex.config]` maps to Codex config/custom-agent keys,
+  including `approval_policy`, `sandbox_mode`, and
+  `sandbox_workspace_write.*`.
+
+Users may lower these permissions in `.phaseharness/config.toml` after
+installation and rerun the installer if they prefer more approval prompts.
 
 The installer must preserve user hooks:
 

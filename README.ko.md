@@ -108,6 +108,27 @@ Parent conversation은 phase 작업을 직접 수행하지 않습니다. provide
 Stop-hook continuation에서 subagent를 실행할 수 없으면 local fallback을 하지
 않고 `subagent_unavailable` 오류로 run을 `waiting_user` 상태로 둡니다.
 
+## 권한 동작
+
+`.phaseharness/config.toml`이 관리 대상 provider 권한의 SSOT입니다. 권한
+table은 가능한 provider native key 모양을 그대로 따릅니다.
+
+- `[permissions.claude.settings.permissions]`는 `.claude/settings.json`의
+  `permissions`로 매핑됩니다.
+- `[permissions.claude.subagents]`는 Claude Code subagent frontmatter로
+  매핑됩니다.
+- `[permissions.codex.config]`는 Codex config/custom-agent의
+  `approval_policy`, `sandbox_mode`, `sandbox_workspace_write.*` 같은 key로
+  매핑됩니다.
+
+기본 profile은 loop 중 매 phase마다 권한 확인으로 멈추지 않도록 넓게 열려
+있습니다.
+
+이 설정은 의도적으로 넓습니다. 반복 승인 없이 provider가 project command와
+파일 수정을 수행해도 되는 repository에만 phaseharness를 설치하세요.
+설치 후 더 보수적인 동작을 원하면 `.phaseharness/config.toml`에서 권한 설정을
+낮추고 installer를 다시 실행하면 됩니다.
+
 ## 개발
 
 로컬 검증:

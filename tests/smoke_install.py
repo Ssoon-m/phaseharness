@@ -105,9 +105,20 @@ def assert_hook_merge(target: Path) -> None:
         raise SystemExit("Claude phaseharness hook was not installed idempotently")
     if codex_text.count(".phaseharness") != 1:
         raise SystemExit("Codex phaseharness hook was not installed idempotently")
+    permissions = claude.get("permissions", {})
+    if permissions.get("defaultMode") != "bypassPermissions":
+        raise SystemExit("Claude bypass permissions mode was not enabled")
+    if "Agent(phaseharness-generate)" not in permissions.get("allow", []):
+        raise SystemExit("Claude phaseharness subagent permission was not allowed")
     config = (target / ".codex" / "config.toml").read_text()
     if "codex_hooks = true" not in config:
         raise SystemExit("Codex hooks feature flag was not enabled")
+    if config.count("# BEGIN phaseharness managed permissions") != 1:
+        raise SystemExit("Codex phaseharness permission block was not installed once")
+    if 'approval_policy = "never"' not in config or 'sandbox_mode = "danger-full-access"' not in config:
+        raise SystemExit("Codex full approval/sandbox permissions were not enabled")
+    if "sandbox_workspace_write.network_access = true" not in config or 'sandbox_workspace_write.writable_roots = ["."]' not in config:
+        raise SystemExit("Codex workspace-write sandbox settings were not generated")
 
 
 def assert_inline_codex_merge(tmp: Path) -> None:
@@ -131,10 +142,55 @@ def assert_inline_codex_merge(tmp: Path) -> None:
         raise SystemExit("existing inline Codex hook was not preserved")
     if "codex_hooks = true" not in config:
         raise SystemExit("inline Codex hooks feature flag was not enabled")
+    if config.count("# BEGIN phaseharness managed permissions") != 1:
+        raise SystemExit("inline Codex phaseharness permission block was not installed once")
+    if 'approval_policy = "never"' not in config or 'sandbox_mode = "danger-full-access"' not in config:
+        raise SystemExit("inline Codex full approval/sandbox permissions were not enabled")
+    if "sandbox_workspace_write.network_access = true" not in config or 'sandbox_workspace_write.writable_roots = ["."]' not in config:
+        raise SystemExit("inline Codex workspace-write sandbox settings were not generated")
     if config.count("# BEGIN phaseharness managed hook") != 1:
         raise SystemExit("inline Codex phaseharness hook block was not installed once")
     if (target / ".codex" / "hooks.json").exists():
         raise SystemExit("inline-only Codex hook install should not create hooks.json")
+
+
+def assert_permission_config_is_ssot(tmp: Path) -> None:
+    target = tmp / "permission-config"
+    target.mkdir()
+    run(["git", "init", "--initial-branch=main"], target)
+    run(["git", "-c", "user.name=Harness Smoke", "-c", "user.email=smoke@example.invalid", "commit", "--allow-empty", "-m", "test: initial"], target)
+    install_fixture(target)
+
+    config_path = target / ".phaseharness" / "config.toml"
+    config = config_path.read_text()
+    config = config.replace('defaultMode = "bypassPermissions"', 'defaultMode = "acceptEdits"')
+    config = config.replace('permissionMode = "bypassPermissions"', 'permissionMode = "acceptEdits"')
+    config = config.replace("allowManagedSubagents = true", "allowManagedSubagents = false")
+    config = config.replace('approval_policy = "never"', 'approval_policy = "on-request"')
+    config = config.replace('sandbox_mode = "danger-full-access"', 'sandbox_mode = "workspace-write"')
+    config = config.replace("network_access = true", "network_access = false")
+    config = config.replace('writable_roots = ["."]', 'writable_roots = [".", "../shared"]')
+    config_path.write_text(config)
+
+    run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
+    claude = json.loads((target / ".claude" / "settings.json").read_text())
+    if claude.get("permissions", {}).get("defaultMode") != "acceptEdits":
+        raise SystemExit("Claude permissions were not generated from .phaseharness/config.toml")
+    if "Agent(phaseharness-generate)" in claude.get("permissions", {}).get("allow", []):
+        raise SystemExit("Claude managed subagent allow rules ignored .phaseharness/config.toml")
+
+    codex_config = (target / ".codex" / "config.toml").read_text()
+    if 'approval_policy = "on-request"' not in codex_config or 'sandbox_mode = "workspace-write"' not in codex_config:
+        raise SystemExit("Codex permissions were not generated from .phaseharness/config.toml")
+    if "sandbox_workspace_write.network_access = false" not in codex_config or 'sandbox_workspace_write.writable_roots = [".", "../shared"]' not in codex_config:
+        raise SystemExit("Codex sandbox_workspace_write settings were not generated from .phaseharness/config.toml")
+    if "permissionMode: acceptEdits" not in (target / ".claude" / "agents" / "phaseharness-generate.md").read_text():
+        raise SystemExit("Claude subagent permissions were not generated from .phaseharness/config.toml")
+    codex_agent = (target / ".codex" / "agents" / "phaseharness-generate.toml").read_text()
+    if 'approval_policy = "on-request"' not in codex_agent or 'sandbox_mode = "workspace-write"' not in codex_agent:
+        raise SystemExit("Codex subagent permissions were not generated from .phaseharness/config.toml")
+    if "sandbox_workspace_write.network_access = false" not in codex_agent or 'sandbox_workspace_write.writable_roots = [".", "../shared"]' not in codex_agent:
+        raise SystemExit("Codex subagent sandbox settings were not generated from .phaseharness/config.toml")
 
 
 def assert_no_legacy_paths(target: Path) -> None:
@@ -164,6 +220,12 @@ def assert_native_subagents(target: Path) -> None:
             raise SystemExit(f"invalid Codex subagent TOML: {codex_path.relative_to(target)}")
         if "Use proactively" not in claude_text or "Use proactively" not in codex_text:
             raise SystemExit(f"subagent description should encourage delegation: {claude_path.relative_to(target)}")
+        if "permissionMode: bypassPermissions" not in claude_text:
+            raise SystemExit(f"Claude subagent permissions should bypass prompts: {claude_path.relative_to(target)}")
+        if 'approval_policy = "never"' not in codex_text or 'sandbox_mode = "danger-full-access"' not in codex_text:
+            raise SystemExit(f"Codex subagent permissions should bypass prompts: {codex_path.relative_to(target)}")
+        if "sandbox_workspace_write.network_access = true" not in codex_text or 'sandbox_workspace_write.writable_roots = ["."]' not in codex_text:
+            raise SystemExit(f"Codex subagent sandbox settings should be generated: {codex_path.relative_to(target)}")
     if "phaseharness_generate" not in (codex_agents / "phaseharness-generate.toml").read_text():
         raise SystemExit("Codex generate subagent name was not written")
 
@@ -607,6 +669,7 @@ def main() -> int:
         install_fixture(target)
         write_existing_hooks(target)
         assert_inline_codex_merge(tmp_path)
+        assert_permission_config_is_ssot(tmp_path)
 
         run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)
         run(["python3", ".phaseharness/bin/phaseharness-install-hooks.py"], target)

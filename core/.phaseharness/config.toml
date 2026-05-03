@@ -13,3 +13,26 @@ timeout_sec = 30
 
 [bridges]
 skills_mode = "symlink"
+
+[permissions]
+profile = "full"
+
+[permissions.claude.settings.permissions]
+defaultMode = "bypassPermissions"
+allow = []
+ask = []
+deny = []
+
+[permissions.claude.subagents]
+permissionMode = "bypassPermissions"
+
+[permissions.claude.phaseharness]
+allowManagedSubagents = true
+
+[permissions.codex.config]
+approval_policy = "never"
+sandbox_mode = "danger-full-access"
+
+[permissions.codex.config.sandbox_workspace_write]
+network_access = true
+writable_roots = ["."]

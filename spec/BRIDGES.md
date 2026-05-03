@@ -2,10 +2,13 @@
 
 Phaseharness keeps canonical files under `.phaseharness/`.
 
-Provider-required bridge files outside that directory are minimal:
+Provider-required bridge files outside that directory are limited to runtime
+integration, permission, and bridge files:
 
-- `.claude/settings.json`: project `Stop` hook entry
-- `.codex/config.toml`: `codex_hooks = true`
+- `.claude/settings.json`: project `Stop` hook entry and phaseharness
+  permission settings
+- `.codex/config.toml`: `codex_hooks = true` and phaseharness permission
+  settings
 - `.codex/hooks.json` or inline Codex hook entry
 - `.claude/skills/phaseharness`: symlink or copy to the canonical skill
 - `.agents/skills/phaseharness`: symlink or copy to the canonical skill
@@ -70,3 +73,17 @@ subagent call the parent agent's first required action:
 - If the provider does not launch the subagent, the parent agent must not
   execute the phase locally. It records `subagent_unavailable` and sets the
   phase to `waiting_user`.
+
+## Permission Bridges
+
+`.phaseharness/config.toml` is the SSOT for managed permissions. Permission
+tables follow provider-native key names where practical:
+
+- `[permissions.claude.settings.permissions]` maps to `.claude/settings.json`
+  `permissions`.
+- `[permissions.claude.subagents]` maps to Claude Code subagent frontmatter.
+- `[permissions.claude.phaseharness]` contains phaseharness-only bridge controls
+  such as `allowManagedSubagents`.
+- `[permissions.codex.config]` maps to Codex config/custom-agent keys,
+  including `approval_policy`, `sandbox_mode`, and
+  `sandbox_workspace_write.*`.
