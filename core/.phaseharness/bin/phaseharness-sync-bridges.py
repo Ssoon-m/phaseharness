@@ -557,14 +557,14 @@ def main() -> int:
     root = find_project_root()
     config = load_harness_config(root)
     changed: list[Path] = ensure_state_files(root)
-    if args.runtime in ("all", "claude"):
-        changed.extend(install_claude_hooks(root, config))
-    if args.runtime in ("all", "codex"):
-        changed.extend(install_codex_hooks(root, config))
     if not args.skip_skills:
         changed.extend(install_skill_bridges(root))
     if not args.skip_subagents:
         changed.extend(install_subagent_bridges(root, args.runtime, config))
+    if args.runtime in ("all", "claude"):
+        changed.extend(install_claude_hooks(root, config))
+    if args.runtime in ("all", "codex"):
+        changed.extend(install_codex_hooks(root, config))
 
     if not args.quiet:
         for path in changed:

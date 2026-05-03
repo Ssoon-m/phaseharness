@@ -167,8 +167,8 @@ The installer generates provider-native subagent bridge files from
 - Claude Code project subagents: `.claude/agents/*.md`
 - Codex project custom agents: `.codex/agents/*.toml`
 
-The SessionStart hook must only resync provider bridge files from
-`.phaseharness/`. It must not create, resume, or advance runs. This keeps
+The SessionStart hook must resync provider bridge files from `.phaseharness/`.
+It must not create, resume, or advance runs. This keeps
 `.phaseharness/subagents/*.md`, `.phaseharness/skills/phaseharness/`, and
 `.phaseharness/config.toml` as the SSOT while avoiding loop activation for
 normal sessions.

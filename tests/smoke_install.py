@@ -300,6 +300,7 @@ def assert_session_start_syncs_bridges(target: Path) -> None:
         raise SystemExit("Codex SessionStart sync should not write stdout context")
     if "SessionStart Codex sync marker." not in (target / ".codex" / "agents" / "phaseharness-clarify.toml").read_text():
         raise SystemExit("Codex SessionStart did not resync subagent bridge from .phaseharness")
+    assert_hook_merge(target)
 
 
 def assert_start_requires_choices(target: Path) -> None:
