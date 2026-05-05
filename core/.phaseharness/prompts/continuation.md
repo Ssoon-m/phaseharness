@@ -22,6 +22,8 @@ Resume summary: {{RESUME_SUMMARY}}
 - Codex: directly spawn exactly one custom agent named `{{CODEX_SUBAGENT}}`, wait for it to finish, then report its result. Do not spawn multiple agents for the same phase.
 - Claude Code: directly invoke the `{{CLAUDE_SUBAGENT}}` subagent, wait for it to finish, then report its result.
 - Pass the run id, current phase, state file, required artifact, loop values, commit mode, implementation phase, and implementation phase file to the subagent.
+- When the provider-native subagent returns with completed or error state, immediately perform any provider-supported close/release action for that subagent thread. Codex must call `close_agent` when the spawned agent id is available. Claude Code treats a returned subagent invocation as closed, but if the environment exposes an explicit close/release action, call it.
+- Close/release failures are not phase failures. Record them only in the parent summary, then continue with artifact/state inspection.
 - After the subagent returns, the parent conversation may only inspect the required artifact and state file, summarize the subagent result, and stop. Do not complete phase work in the parent conversation.
 - If the provider cannot invoke the subagent, create or append the required artifact with an `## Executor` section, set this phase to `waiting_user` with an error message that starts with `subagent_unavailable`, and stop.
 - The required artifact must include an `## Executor` section with `requested_subagent`, `execution_mode`, and `delegation_error`.

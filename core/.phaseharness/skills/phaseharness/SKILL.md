@@ -55,17 +55,17 @@ continue from file state.
 
 5. For a new run, determine `loop_count` before starting.
    - If the user already specified it, use that positive integer.
-   - If not, ask once: `How many generate/evaluate loops should this run allow? Default is 2.`
+   - If not, ask once in Korean using the combined option prompt below.
    - Do not start until the user chooses a number or explicitly accepts the
      default.
 6. Determine `max_attempts_per_phase` before starting.
    - If the user already specified it, use that positive integer.
-   - If not, ask once: `How many attempts should each implementation phase get? Default is 2.`
+   - If not, ask once in Korean using the combined option prompt below.
    - Do not start until the user chooses a number or explicitly accepts the
      default.
 7. Determine `commit_mode` before starting.
    - If the user already specified `none`, `final`, or `phase`, use that value.
-   - If not, ask once: `Commit mode for this phaseharness task? none, final, or phase. Default is none.`
+   - If not, ask once in Korean using the combined option prompt below.
    - `none`: do not create product commits automatically.
    - `final`: create one product commit after `evaluate` passes or warns.
    - `phase`: create a product commit after each planned implementation phase completes.
@@ -75,17 +75,18 @@ continue from file state.
    variable names:
 
 ```text
-phaseharness 실행 옵션을 정해야 합니다. 기본값으로 시작해도 되고, 원하는 값만 바꿔서 답해도 됩니다.
+Phaseharness needs run options before starting. You can accept the defaults or override only the values you want.
 
-- loop count: generate -> evaluate 전체 사이클을 몇 번까지 허용할지 정합니다. evaluate가 실패하고 후속 phase가 생기면 다음 loop로 돌아갑니다. 기본값: 2
-- max attempts per phase: plan에서 나뉜 각 implementation phase를 실패 시 몇 번까지 다시 시도할지 정합니다. 전체 workflow 반복 횟수가 아닙니다. 기본값: 2
-- commit mode: 자동 commit 방식입니다. 기본값: none
-  - none: 자동 commit을 만들지 않습니다.
-  - phase: 각 implementation phase가 완료될 때마다 product change를 commit합니다.
-  - final: 최종 evaluate가 pass 또는 warn이면 product commit 하나를 만듭니다.
+- loop count: maximum number of full generate -> evaluate cycles. If evaluate fails and creates follow-up phases, the next loop returns to generate. Default: 2
+- max attempts per phase: retry limit for each implementation phase created by plan. This is not the whole workflow loop count. Default: 2
+- commit mode: automatic commit behavior. Default: none
+  - none: do not create automatic commits.
+  - phase: commit product changes after each implementation phase completes.
+  - final: create one product commit when final evaluate is pass or warn.
 
-기본값으로 진행할까요?
-원하면 `loop count 3, max attempts per phase 2, commit mode final`처럼 답해주세요.
+Proceed with the defaults?
+You can answer like `loop count 3, max attempts per phase 2, commit mode final`.
+For a short answer, use `3/2/final` in `loop count / max attempts per phase / commit mode` order.
 ```
 
 9. Create an active run:
@@ -97,8 +98,8 @@ python3 .phaseharness/bin/phaseharness-state.py start --request "<request>" --lo
 10. Use the printed run id as `<run-id>`.
 11. Do not perform `clarify` in the current conversation.
 12. Stop normally. The project `Stop` hook will read the active run and continue
-   with `clarify` through the provider-native phaseharness subagent when
-   supported.
+    with `clarify` through the provider-native phaseharness subagent when
+    supported.
 
 ## State Rules
 

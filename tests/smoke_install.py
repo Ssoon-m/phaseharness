@@ -383,6 +383,8 @@ def assert_hook_activation_and_resume(target: Path) -> None:
         raise SystemExit("continuation prompt did not request the Claude subagent")
     if "subagent_unavailable" not in first_json.get("reason", ""):
         raise SystemExit("continuation prompt did not define subagent unavailable handling")
+    if "Codex must call `close_agent`" not in first_json.get("reason", ""):
+        raise SystemExit("continuation prompt did not require Codex subagent cleanup")
 
     other_session = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "s2", "t2"))
     if json.loads(other_session.stdout).get("continue") is not True:
