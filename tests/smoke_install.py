@@ -109,6 +109,10 @@ def assert_hook_merge(target: Path) -> None:
         raise SystemExit("Claude SessionStart matcher was not installed")
     if "startup|resume|clear" not in codex_text:
         raise SystemExit("Codex SessionStart matcher was not installed")
+    if "git -C" not in claude_text or "rev-parse --show-toplevel" not in claude_text:
+        raise SystemExit("Claude hook command should be bounded to the repository root")
+    if "while [" in claude_text or "dirname" in claude_text:
+        raise SystemExit("Claude hook command should not search past the repository root")
     if claude_text.count(".phaseharness") != 2:
         raise SystemExit("Claude phaseharness hook was not installed idempotently")
     if codex_text.count(".phaseharness") != 2:
@@ -244,7 +248,7 @@ def assert_skill_starts_with_hooked_clarify(target: Path) -> None:
     text = (target / ".phaseharness" / "skills" / "phaseharness" / "SKILL.md").read_text()
     if "Do not perform `clarify` in the current conversation." not in text:
         raise SystemExit("phaseharness skill should leave clarify to the Stop hook")
-    if "continue\n   with `clarify`" not in text:
+    if "Stop` hook will read the active run and continue" not in text or "with `clarify` through" not in text:
         raise SystemExit("phaseharness skill should document hooked clarify startup")
 
 

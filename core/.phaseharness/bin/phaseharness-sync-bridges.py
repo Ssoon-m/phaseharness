@@ -199,12 +199,10 @@ def command_for(runtime: str, event: str) -> str:
     script = f"{runtime}-{event}.sh"
     if runtime == "claude":
         return (
-            "sh -c 'd=\"${CLAUDE_PROJECT_DIR:-$PWD}\"; "
-            "while [ \"$d\" != \"/\" ]; do "
-            f"f=\"$d/.phaseharness/hooks/{script}\"; "
-            "if [ -x \"$f\" ]; then exec \"$f\"; fi; "
-            "d=\"$(dirname \"$d\")\"; "
-            "done; exit 0'"
+            "sh -c 'root=\"$(git -C \"${CLAUDE_PROJECT_DIR:-$PWD}\" rev-parse --show-toplevel 2>/dev/null || printf %s \"${CLAUDE_PROJECT_DIR:-$PWD}\")\"; "
+            f"f=\"$root/.phaseharness/hooks/{script}\"; "
+            "[ -x \"$f\" ] && exec \"$f\"; "
+            "exit 0'"
         )
     if runtime == "codex":
         return (
