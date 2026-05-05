@@ -131,10 +131,12 @@ def assert_hook_merge(target: Path) -> None:
         raise SystemExit("Codex full approval/sandbox permissions were not enabled")
     if "sandbox_workspace_write.network_access = true" not in config or 'sandbox_workspace_write.writable_roots = ["."]' not in config:
         raise SystemExit("Codex workspace-write sandbox settings were not generated")
+    if "# BEGIN phaseharness managed hook" in config or "codex-stop.sh" in config:
+        raise SystemExit("Codex phaseharness hooks should only be installed in hooks.json")
 
 
-def assert_inline_codex_merge(tmp: Path) -> None:
-    target = tmp / "inline-codex"
+def assert_codex_hooks_json_replaces_managed_inline_hooks(tmp: Path) -> None:
+    target = tmp / "codex-hooks-json"
     target.mkdir()
     run(["git", "init", "--initial-branch=main"], target)
     run(["git", "-c", "user.name=Harness Smoke", "-c", "user.email=smoke@example.invalid", "commit", "--allow-empty", "-m", "test: initial"], target)
@@ -147,25 +149,43 @@ def assert_inline_codex_merge(tmp: Path) -> None:
         "[[hooks.PostToolUse.hooks]]\n"
         "type = \"command\"\n"
         "command = \"echo existing-inline-codex-hook\"\n"
+        "\n"
+        "# BEGIN phaseharness managed hook\n"
+        "[[hooks.SessionStart]]\n"
+        "matcher = \"startup|resume|clear\"\n"
+        "[[hooks.SessionStart.hooks]]\n"
+        "type = \"command\"\n"
+        "command = \"sh .phaseharness/hooks/codex-session-start.sh\"\n"
+        "\n"
+        "[[hooks.Stop]]\n"
+        "[[hooks.Stop.hooks]]\n"
+        "type = \"command\"\n"
+        "command = \"sh .phaseharness/hooks/codex-stop.sh\"\n"
+        "# END phaseharness managed hook\n"
     )
+    run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py", "--runtime", "codex"], target)
     run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py", "--runtime", "codex"], target)
     config = (target / ".codex" / "config.toml").read_text()
     if "existing-inline-codex-hook" not in config:
         raise SystemExit("existing inline Codex hook was not preserved")
     if "codex_hooks = true" not in config:
-        raise SystemExit("inline Codex hooks feature flag was not enabled")
+        raise SystemExit("Codex hooks feature flag was not enabled")
     if config.count("# BEGIN phaseharness managed permissions") != 1:
-        raise SystemExit("inline Codex phaseharness permission block was not installed once")
+        raise SystemExit("Codex phaseharness permission block was not installed once")
     if 'approval_policy = "never"' not in config or 'sandbox_mode = "danger-full-access"' not in config:
-        raise SystemExit("inline Codex full approval/sandbox permissions were not enabled")
+        raise SystemExit("Codex full approval/sandbox permissions were not enabled")
     if "sandbox_workspace_write.network_access = true" not in config or 'sandbox_workspace_write.writable_roots = ["."]' not in config:
-        raise SystemExit("inline Codex workspace-write sandbox settings were not generated")
-    if config.count("# BEGIN phaseharness managed hook") != 1:
-        raise SystemExit("inline Codex phaseharness hook block was not installed once")
-    if "[[hooks.SessionStart]]" not in config or "[[hooks.Stop]]" not in config:
-        raise SystemExit("inline Codex SessionStart and Stop hooks were not installed")
-    if (target / ".codex" / "hooks.json").exists():
-        raise SystemExit("inline-only Codex hook install should not create hooks.json")
+        raise SystemExit("Codex workspace-write sandbox settings were not generated")
+    if "# BEGIN phaseharness managed hook" in config:
+        raise SystemExit("old inline Codex phaseharness hook block was not removed")
+    if "codex-session-start.sh" in config or "codex-stop.sh" in config:
+        raise SystemExit("Codex phaseharness hooks should not be written to config.toml")
+    codex = json.loads((target / ".codex" / "hooks.json").read_text())
+    codex_text = json.dumps(codex)
+    if "SessionStart" not in codex.get("hooks", {}) or "Stop" not in codex.get("hooks", {}):
+        raise SystemExit("Codex hooks.json SessionStart and Stop hooks were not installed")
+    if codex_text.count(".phaseharness") != 2:
+        raise SystemExit("Codex hooks.json phaseharness hook was not installed idempotently")
 
 
 def assert_permission_config_is_ssot(tmp: Path) -> None:
@@ -715,7 +735,7 @@ def main() -> int:
 
         install_fixture(target)
         write_existing_hooks(target)
-        assert_inline_codex_merge(tmp_path)
+        assert_codex_hooks_json_replaces_managed_inline_hooks(tmp_path)
         assert_permission_config_is_ssot(tmp_path)
 
         run(["python3", ".phaseharness/bin/phaseharness-sync-bridges.py"], target)

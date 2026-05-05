@@ -9,7 +9,7 @@ integration, permission, and bridge files:
   permission settings
 - `.codex/config.toml`: `codex_hooks = true` and phaseharness permission
   settings
-- `.codex/hooks.json` or inline Codex `SessionStart`/`Stop` hook entries
+- `.codex/hooks.json`: Codex `SessionStart`/`Stop` hook entries
 - `.claude/skills/phaseharness`: symlink or copy to the canonical skill
 - `.agents/skills/phaseharness`: symlink or copy to the canonical skill
 - `.claude/agents/phaseharness-*.md`: Claude Code project subagents generated from canonical subagent prompts
@@ -28,7 +28,10 @@ The bridge sync command must:
 
 - preserve existing user hooks
 - add or replace only entries whose command contains `.phaseharness`
-- preserve existing Codex inline hooks when no `hooks.json` exists
+- always install Codex phaseharness hooks in `.codex/hooks.json`
+- remove previous phaseharness managed Codex inline hook blocks from
+  `.codex/config.toml`
+- preserve unrelated user-authored `.codex/config.toml` content
 - enable `codex_hooks = true`
 - stop on invalid JSON instead of guessing
 - install `SessionStart` only for bridge sync; install `Stop` only for workflow

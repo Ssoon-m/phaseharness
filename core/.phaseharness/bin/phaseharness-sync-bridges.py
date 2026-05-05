@@ -314,13 +314,6 @@ def ensure_codex_feature_flag(path: Path) -> None:
     path.write_text(text.rstrip() + f"{prefix}[features]\ncodex_hooks = true\n")
 
 
-def has_inline_codex_hooks(path: Path) -> bool:
-    if not path.exists():
-        return False
-    text = path.read_text()
-    return bool(re.search(r"(?m)^\s*\[hooks\]\s*$|^\s*\[\[hooks\.", text))
-
-
 def remove_managed_toml_block(text: str) -> str:
     pattern = re.compile(
         r"\n?# BEGIN phaseharness managed hook\n.*?# END phaseharness managed hook\n?",
@@ -356,6 +349,7 @@ def remove_root_toml_keys(text: str, keys: set[str]) -> str:
 
 def ensure_codex_permissions(config_path: Path, config: dict[str, Any]) -> None:
     text = config_path.read_text() if config_path.exists() else ""
+    text = remove_managed_toml_block(text)
     text = remove_managed_permissions_block(text)
     text = remove_root_toml_keys(
         text,
@@ -380,32 +374,6 @@ def ensure_codex_permissions(config_path: Path, config: dict[str, Any]) -> None:
     config_path.write_text(block + ("\n" + text.lstrip() if text.strip() else ""))
 
 
-def append_codex_inline_hook(config_path: Path, config: dict[str, Any]) -> None:
-    text = config_path.read_text() if config_path.exists() else ""
-    text = remove_managed_toml_block(text)
-    session_start_command = command_for("codex", "session-start")
-    stop_command = command_for("codex", "stop")
-    block = f"""
-# BEGIN phaseharness managed hook
-[[hooks.SessionStart]]
-matcher = "startup|resume|clear"
-[[hooks.SessionStart.hooks]]
-type = "command"
-command = {toml_string(session_start_command)}
-timeout = {config_int(config, 30, "hooks", "timeout_sec")}
-statusMessage = "Syncing phaseharness bridges"
-
-[[hooks.Stop]]
-[[hooks.Stop.hooks]]
-type = "command"
-command = {toml_string(stop_command)}
-timeout = {config_int(config, 30, "hooks", "timeout_sec")}
-statusMessage = "Checking phaseharness state"
-# END phaseharness managed hook
-"""
-    config_path.write_text(text.rstrip() + "\n" + block.lstrip())
-
-
 def install_codex_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     make_executable(root / ".phaseharness" / "hooks" / "codex-stop.sh")
     make_executable(root / ".phaseharness" / "hooks" / "codex-session-start.sh")
@@ -413,18 +381,11 @@ def install_codex_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     hooks_path = root / ".codex" / "hooks.json"
     ensure_codex_feature_flag(config_path)
     ensure_codex_permissions(config_path, config)
-    changed = [config_path]
-
-    if hooks_path.exists() or not has_inline_codex_hooks(config_path):
-        data = load_json_object(hooks_path)
-        merge_hook(data, "SessionStart", "startup|resume|clear", hook_entry("codex", "session-start", config))
-        merge_hook(data, "Stop", "", hook_entry("codex", "stop", config))
-        write_json(hooks_path, data)
-        changed.append(hooks_path)
-        return changed
-
-    append_codex_inline_hook(config_path, config)
-    return changed
+    data = load_json_object(hooks_path)
+    merge_hook(data, "SessionStart", "startup|resume|clear", hook_entry("codex", "session-start", config))
+    merge_hook(data, "Stop", "", hook_entry("codex", "stop", config))
+    write_json(hooks_path, data)
+    return [config_path, hooks_path]
 
 
 def link_or_copy_skill(root: Path, target: Path) -> Path:

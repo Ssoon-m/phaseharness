@@ -101,7 +101,7 @@ entries, skill symlinks, and provider-native subagent bridge files:
 
 - `.claude/settings.json`
 - `.codex/config.toml`
-- `.codex/hooks.json` or inline Codex hook config
+- `.codex/hooks.json`
 - `.claude/skills/phaseharness`
 - `.agents/skills/phaseharness`
 - `.claude/agents/phaseharness-*.md`

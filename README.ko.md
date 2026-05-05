@@ -99,7 +99,7 @@ provider-native subagent bridge뿐입니다.
 
 - `.claude/settings.json`
 - `.codex/config.toml`
-- `.codex/hooks.json` 또는 Codex inline hook config
+- `.codex/hooks.json`
 - `.claude/skills/phaseharness`
 - `.agents/skills/phaseharness`
 - `.claude/agents/phaseharness-*.md`

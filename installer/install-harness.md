@@ -64,7 +64,7 @@ Phaseharness-owned target paths:
 
 - `.phaseharness/`
 - `.claude/settings.json` phaseharness `SessionStart`/`Stop` hook entries and managed permissions
-- `.codex/config.toml` `codex_hooks` flag, phaseharness inline hook block, and managed permissions
+- `.codex/config.toml` `codex_hooks` flag and managed permissions
 - `.codex/hooks.json` phaseharness `SessionStart`/`Stop` hook entries
 - `.claude/skills/phaseharness`
 - `.agents/skills/phaseharness`
@@ -155,7 +155,7 @@ Expected managed paths:
 - `.phaseharness/bin/phaseharness-sync-bridges.py`
 - `.claude/settings.json`
 - `.codex/config.toml`
-- `.codex/hooks.json` unless the target already uses Codex inline hooks only
+- `.codex/hooks.json`
 - `.claude/skills/phaseharness`
 - `.agents/skills/phaseharness`
 - `.claude/agents/phaseharness-*.md`
@@ -199,10 +199,10 @@ The installer must preserve user hooks:
 
 - If `.claude/settings.json` already has hooks, keep them and add only the
   phaseharness `SessionStart` and `Stop` hook entries.
-- If `.codex/hooks.json` already exists, keep it and add only the phaseharness
-  `SessionStart` and `Stop` hook entries.
-- If `.codex/config.toml` already uses inline hooks and `.codex/hooks.json` is
-  absent, append one managed phaseharness `SessionStart`/`Stop` hook block there.
+- Always write Codex phaseharness `SessionStart` and `Stop` hook entries to
+  `.codex/hooks.json`, preserving any existing hooks in that file.
+- If `.codex/config.toml` contains a previous phaseharness managed inline hook
+  block, remove it. Preserve unrelated user-authored config content.
 - If existing hook JSON is invalid, stop and ask the user before editing it.
 
 Codex requires:
@@ -271,7 +271,7 @@ Created/updated:
 - .phaseharness/
 - .claude/settings.json phaseharness SessionStart/Stop hook entries
 - .codex/config.toml codex_hooks flag
-- .codex/hooks.json or inline Codex SessionStart/Stop hook entry
+- .codex/hooks.json phaseharness SessionStart/Stop hook entries
 - .claude/skills/phaseharness
 - .agents/skills/phaseharness
 - .claude/agents/phaseharness-*.md

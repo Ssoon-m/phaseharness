@@ -26,7 +26,7 @@ No-op output is empty stdout.
 
 ## Codex
 
-Codex uses project hooks from `.codex/hooks.json` or inline `.codex/config.toml`.
+Codex uses phaseharness project hooks from `.codex/hooks.json`.
 The installer must set:
 
 ```toml
