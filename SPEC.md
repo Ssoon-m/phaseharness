@@ -88,8 +88,6 @@ Source repository:
       skills/
       subagents/
       prompts/
-      docs/
-      templates/
       state/
       runs/
 ```
@@ -116,7 +114,6 @@ Target repository after install:
         SKILL.md
     subagents/
     prompts/
-    docs/
     state/
     runs/
 

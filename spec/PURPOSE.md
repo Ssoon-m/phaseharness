@@ -46,7 +46,6 @@ The goal is to provide:
       skills/
       subagents/
       prompts/
-      docs/
       state/
       runs/
 ```

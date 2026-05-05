@@ -103,8 +103,8 @@ cp -R "$HARNESS_SOURCE/core/.phaseharness/." .phaseharness/
 chmod +x .phaseharness/bin/*.py .phaseharness/hooks/*.sh
 ```
 
-All phaseharness-owned runtime state, docs, prompts, subagent instructions,
-hooks, and scripts must live under `.phaseharness/`.
+All phaseharness-owned runtime state, prompts, subagent instructions, hooks, and
+scripts must live under `.phaseharness/`.
 
 ## 4. Initialize State
 
