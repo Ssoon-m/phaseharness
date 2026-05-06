@@ -1,4 +1,4 @@
-# phaseloop
+# phaseharness
 
 Installable `phaseharness` workflow for Claude Code and Codex.
 
