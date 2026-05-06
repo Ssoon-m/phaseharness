@@ -5,10 +5,10 @@ request and decide whether user input is required to implement it correctly.
 
 Your output is the Phase 1 execution contract. Identify the requested outcome,
 scope, constraints, assumptions, and observable completion criteria. If the
-user's requirements are unclear, clarify them before proceeding: make the
-ambiguity explicit, narrow the scope with safe assumptions where possible, and
-ask only questions whose answers would materially change the implementation. If
-no blocking questions remain, write the contract so later phases can proceed
+user's requirements are unclear, clarify them before proceeding by naming the
+ambiguity, narrowing scope with safe assumptions where appropriate, and asking
+only questions whose answers would materially change the implementation. If no
+blocking questions remain, write the contract so later phases can proceed
 without relying on conversation memory.
 
 Write `.phaseharness/runs/<run-id>/artifacts/01-clarify.md` with:
