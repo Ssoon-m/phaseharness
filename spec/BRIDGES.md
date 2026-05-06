@@ -11,7 +11,9 @@ integration, permission, and bridge files:
   settings
 - `.codex/hooks.json`: Codex `SessionStart`/`Stop` hook entries
 - `.claude/skills/phaseharness`: symlink or copy to the canonical skill
+- `.claude/skills/commit`: symlink or copy to the canonical skill
 - `.agents/skills/phaseharness`: symlink or copy to the canonical skill
+- `.agents/skills/commit`: symlink or copy to the canonical skill
 - `.claude/agents/phaseharness-*.md`: Claude Code project subagents generated from canonical subagent prompts
 - `.codex/agents/phaseharness-*.toml`: Codex project custom agents generated from canonical subagent prompts
 
@@ -20,7 +22,7 @@ They are bridge/config artifacts, not canonical source.
 
 `.phaseharness/bin/phaseharness-sync-bridges.py` is the primary bridge sync entrypoint.
 It reads `.phaseharness/config.toml`, `.phaseharness/subagents/`, and
-`.phaseharness/skills/phaseharness/`, then regenerates provider bridge files.
+`.phaseharness/skills/`, then regenerates provider bridge files.
 
 ## Hook Merge Rules
 
@@ -37,19 +39,21 @@ The bridge sync command must:
 - install `SessionStart` only for bridge sync; install `Stop` only for workflow
   continuation
 
-## Skill Bridge
+## Skill Bridges
 
-The canonical skill lives at:
+Canonical skills live under:
 
 ```text
-.phaseharness/skills/phaseharness/SKILL.md
+.phaseharness/skills/<skill-name>/SKILL.md
 ```
 
 Runtime skill bridge targets:
 
 ```text
 .claude/skills/phaseharness
+.claude/skills/commit
 .agents/skills/phaseharness
+.agents/skills/commit
 ```
 
 Symlinks are preferred. Copies are acceptable when symlinks are unavailable.

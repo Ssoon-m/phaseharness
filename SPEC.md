@@ -2,7 +2,7 @@
 
 ## 1. Purpose
 
-phaseloop ships an installable `phaseharness` workflow for Claude Code and
+phaseharness ships an installable `phaseharness` workflow for Claude Code and
 Codex.
 
 The target repository receives one canonical harness directory:
@@ -112,6 +112,8 @@ Target repository after install:
     skills/
       phaseharness/
         SKILL.md
+      commit/
+        SKILL.md
     subagents/
     prompts/
     state/
@@ -119,8 +121,10 @@ Target repository after install:
 
   .claude/settings.json
   .claude/skills/phaseharness -> ../../.phaseharness/skills/phaseharness
+  .claude/skills/commit -> ../../.phaseharness/skills/commit
   .claude/agents/phaseharness-*.md
   .agents/skills/phaseharness -> ../../.phaseharness/skills/phaseharness
+  .agents/skills/commit -> ../../.phaseharness/skills/commit
   .codex/config.toml
   .codex/hooks.json
   .codex/agents/phaseharness-*.toml
@@ -157,8 +161,9 @@ The Stop hook:
   phase prompt is still running or needs retry
 - consumes `loop_count` when `evaluate` fails and queues follow-up
   implementation phases
-- applies `commit_mode` after each implementation phase (`phase`) or after
-  pass/warn `evaluate` (`final`)
+- applies `commit_mode` by prompting the parent agent to use the installed
+  `commit` skill after each implementation phase (`phase`) or after pass/warn
+  `evaluate` (`final`)
 
 Codex no-op output is JSON. Claude no-op output is empty stdout.
 

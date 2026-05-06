@@ -21,13 +21,13 @@ Open Claude Code or Codex in the target repository and ask:
 
 ```text
 Install phaseharness from this installer document:
-https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
+https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 ```
 
 The installer copies `core/.phaseharness/` into the target repository, installs
 Claude/Codex `SessionStart` and `Stop` hook entries, exposes the
-`phaseharness` skill, generates provider-native subagent bridge files, and runs
-smoke verification.
+`phaseharness` and `commit` skills, generates provider-native subagent bridge
+files, and runs smoke verification.
 
 ## Run A Task
 
@@ -62,8 +62,9 @@ follow-up build-review cycle after the first evaluation failure.
   completes.
 - `final`: create one product commit after `evaluate` passes or warns.
 
-Commit helpers exclude `.phaseharness/` runtime state and managed provider
-bridge files by default.
+Commit mode uses the installed `commit` skill. The helper command in that
+prompt excludes `.phaseharness/` runtime state and managed provider bridge
+files by default.
 
 General questions, short explanations, reviews, and one-off commands do not
 activate the loop. Activation requires `.phaseharness/state/active.json` with
@@ -79,7 +80,7 @@ All canonical harness files and runtime state live under `.phaseharness/`:
 
 - `.phaseharness/bin/`: state, hook, bridge sync, and commit helpers
 - `.phaseharness/hooks/`: provider hook wrappers
-- `.phaseharness/skills/phaseharness/`: skill instructions
+- `.phaseharness/skills/`: skill instructions
 - `.phaseharness/subagents/`: phase-specific subagent instructions
 - `.phaseharness/runs/`: per-run artifacts and state
 - `.phaseharness/state/`: active run pointer and run index
@@ -93,7 +94,7 @@ python3 .phaseharness/bin/phaseharness-sync-bridges.py
 
 The installed `SessionStart` hook runs the same bridge sync silently at session
 startup/resume, so edits to `.phaseharness/subagents/*.md`,
-`.phaseharness/skills/phaseharness/`, or `.phaseharness/config.toml` are
+`.phaseharness/skills/`, or `.phaseharness/config.toml` are
 reflected in provider bridge files before the session starts handling prompts.
 
 Provider-required files outside `.phaseharness/` are limited to managed hook
@@ -103,7 +104,9 @@ entries, skill symlinks, and provider-native subagent bridge files:
 - `.codex/config.toml`
 - `.codex/hooks.json`
 - `.claude/skills/phaseharness`
+- `.claude/skills/commit`
 - `.agents/skills/phaseharness`
+- `.agents/skills/commit`
 - `.claude/agents/phaseharness-*.md`
 - `.codex/agents/phaseharness-*.toml`
 

@@ -444,9 +444,12 @@ def complete_phase(target: Path, run_id: str, phase: str, artifact: str, text: s
     result = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "workflow-session", turn_id))
     data = json.loads(result.stdout)
     if phase == "evaluate":
-        if data.get("continue") is not True:
+        if data.get("continue") is True:
+            return ""
+        if data.get("decision") == "block":
+            return data.get("reason", "")
+        else:
             raise SystemExit(f"evaluate completion should deactivate hook, got: {data}")
-        return ""
     if data.get("decision") != "block":
         raise SystemExit(f"expected continuation after {phase}, got: {data}")
     return data.get("reason", "")
@@ -469,6 +472,22 @@ def complete_generate_phase(target: Path, run_id: str, phase_id: str, text: str,
     if data.get("decision") != "block":
         raise SystemExit(f"expected continuation after implementation phase {phase_id}, got: {data}")
     return data.get("reason", "")
+
+
+def run_phaseharness_commit(target: Path, run_id: str, key: str, mode: str, implementation_phase: str | None = None) -> None:
+    command = [
+        "python3",
+        ".phaseharness/bin/commit-result.py",
+        run_id,
+        "--mode",
+        mode,
+    ]
+    if implementation_phase:
+        command.extend(["--implementation-phase", implementation_phase])
+    if mode == "implementation-phase":
+        command.append("--allow-head-move")
+    command.extend(["--record-state-key", key])
+    run(command, target)
 
 
 def assert_full_workflow(target: Path) -> None:
@@ -679,6 +698,10 @@ def assert_commit_modes(target: Path) -> None:
     complete_phase(target, phase_run_id, "plan", "artifacts/03-plan.md", "# Plan\nDone\n", "phase-4")
     (target / "phase-product.txt").write_text("phase product\n")
     prompt = complete_generate_phase(target, phase_run_id, "phase-001", "# Generate\nDone\n", "phase-5")
+    if "commit` skill" not in prompt or "--record-state-key implementation_phase-001" not in prompt:
+        raise SystemExit("phase commit mode did not request the commit skill")
+    run_phaseharness_commit(target, phase_run_id, "implementation_phase-001", "implementation-phase", "phase-001")
+    prompt = continue_hook(target, "workflow-session", "phase-6")
     if "evaluate" not in prompt:
         raise SystemExit("phase commit mode did not advance to evaluate")
     phase_state = json.loads((phase_run_dir / "state.json").read_text())
@@ -714,7 +737,13 @@ def assert_commit_modes(target: Path) -> None:
     complete_phase(target, final_run_id, "plan", "artifacts/03-plan.md", "# Plan\nDone\n", "final-4")
     (target / "final-product.txt").write_text("final product\n")
     complete_generate_phase(target, final_run_id, "phase-001", "# Generate\nDone\n", "final-5")
-    complete_phase(target, final_run_id, "evaluate", "artifacts/05-evaluate.md", "# Evaluate\n\n## Result\npass\n", "final-6")
+    prompt = complete_phase(target, final_run_id, "evaluate", "artifacts/05-evaluate.md", "# Evaluate\n\n## Result\npass\n", "final-6")
+    if "commit` skill" not in prompt or "--record-state-key final" not in prompt:
+        raise SystemExit("final commit mode did not request the commit skill")
+    run_phaseharness_commit(target, final_run_id, "final", "completed")
+    result = run(["sh", ".phaseharness/hooks/codex-stop.sh"], target, hook_input(target, "workflow-session", "final-7"))
+    if json.loads(result.stdout).get("continue") is not True:
+        raise SystemExit("final commit mode did not deactivate after commit skill completed")
     final_state = json.loads((final_run_dir / "state.json").read_text())
     if final_state.get("commits", {}).get("final", {}).get("status") != "completed":
         raise SystemExit("final commit mode did not record a completed final commit")
@@ -755,8 +784,11 @@ def main() -> int:
             ".phaseharness/hooks/claude-session-start.sh",
             ".phaseharness/hooks/codex-session-start.sh",
             ".phaseharness/skills/phaseharness/SKILL.md",
+            ".phaseharness/skills/commit/SKILL.md",
             ".claude/skills/phaseharness",
+            ".claude/skills/commit",
             ".agents/skills/phaseharness",
+            ".agents/skills/commit",
             ".claude/agents/phaseharness-clarify.md",
             ".codex/agents/phaseharness-clarify.toml",
         ]

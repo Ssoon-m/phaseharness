@@ -41,7 +41,7 @@ Resume summary: {{RESUME_SUMMARY}}
 - During `evaluate`, `fail` should add one or more follow-up `phases/phase-NNN.md` files when the issue is fixable within the remaining loop budget.
 - On failure, set the phase to `error` and include a clear `error_message`.
 - Do not start another phase yourself. The Stop hook advances phases from file state.
-- Commit mode is already stored in state. `none` does not commit, `phase` commits product changes after each implementation phase, and `final` commits product changes after a pass/warn `evaluate`.
+- Commit mode is already stored in state. `none` does not commit. `phase` and `final` commit points are handled by a separate Stop-hook continuation that requires the installed `commit` skill.
 
 ## Subagent Instructions
 

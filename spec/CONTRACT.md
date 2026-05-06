@@ -158,6 +158,10 @@ No-op:
 
 Commit is optional. It is not a workflow phase.
 
-`.phaseharness/bin/commit-result.py` may commit product changes for a completed
-run whose evaluation is `pass` or `warn`. It excludes `.phaseharness/` state by
-default unless `--include-harness-state` is supplied.
+Commit-mode continuations require the parent agent to use the installed
+`commit` skill. That skill runs `.phaseharness/bin/commit-result.py` to commit
+product changes and record the result under `state.commits`.
+
+The helper may commit product changes for a completed run whose evaluation is
+`pass` or `warn`, or for a completed implementation phase. It excludes
+`.phaseharness/` state by default unless `--include-harness-state` is supplied.

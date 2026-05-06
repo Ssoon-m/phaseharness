@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import subprocess
 import sys
 import time
 from datetime import datetime, timezone
@@ -227,46 +226,16 @@ def update_index(root: Path, run_id: str, status: str) -> None:
     save_json(path, index)
 
 
-def git_head(root: Path) -> str:
-    result = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(root), text=True, capture_output=True)
-    return result.stdout.strip() if result.returncode == 0 else ""
-
-
-def trim_output(value: str, limit: int = 4000) -> str:
-    if len(value) <= limit:
-        return value
-    return value[-limit:]
-
-
-def commit_failure_prompt(state: dict[str, Any], key: str, result: subprocess.CompletedProcess[str]) -> str:
-    output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part).strip()
-    if not output:
-        output = f"commit helper exited with code {result.returncode}"
-    return (
-        "Phaseharness commit mode could not finish automatically.\n\n"
-        f"Run id: `{state.get('run_id')}`\n"
-        f"Commit step: `{key}`\n"
-        f"Exit code: `{result.returncode}`\n\n"
-        "The run state has been set to `waiting_user`; do not continue the workflow "
-        "until the user decides how to handle the commit failure.\n\n"
-        "Commit helper output:\n\n"
-        "```text\n"
-        f"{trim_output(output)}\n"
-        "```"
-    )
-
-
-def run_commit_helper(
-    root: Path,
+def commit_helper_command(
     state: dict[str, Any],
     key: str,
     mode: str,
     implementation_phase: str | None = None,
-) -> subprocess.CompletedProcess[str]:
+) -> list[str]:
     run_id = str(state.get("run_id"))
     command = [
-        sys.executable,
-        str(root / ".phaseharness" / "bin" / "commit-result.py"),
+        "python3",
+        ".phaseharness/bin/commit-result.py",
         run_id,
         "--mode",
         mode,
@@ -275,51 +244,81 @@ def run_commit_helper(
         command.extend(["--implementation-phase", implementation_phase])
     if mode == "implementation-phase":
         command.append("--allow-head-move")
-    result = subprocess.run(command, cwd=str(root), text=True, capture_output=True)
+    command.extend(["--record-state-key", key])
+    return command
+
+
+def shell_join(command: list[str]) -> str:
+    return " ".join(command)
+
+
+def commit_skill_prompt(
+    state: dict[str, Any],
+    key: str,
+    mode: str,
+    implementation_phase: str | None,
+    command: list[str],
+) -> str:
+    phase_detail = implementation_phase or "final"
+    return (
+        "Phaseharness commit mode requires a product commit through the `commit` skill.\n\n"
+        f"Run id: `{state.get('run_id')}`\n"
+        f"Commit step: `{key}`\n"
+        f"Commit helper mode: `{mode}`\n"
+        f"Implementation phase: `{phase_detail}`\n\n"
+        "Use the provider `commit` skill now. Follow its inspection and staging rules. "
+        "For this phaseharness-managed commit, run the helper command below from the "
+        "project root instead of hand-staging paths:\n\n"
+        "```bash\n"
+        f"{shell_join(command)}\n"
+        "```\n\n"
+        "Do not push. Do not include `.phaseharness/` runtime state or provider bridge "
+        "files in the product commit. Stop after the helper records the commit result; "
+        "the next Stop hook will continue the run from file state."
+    )
+
+
+def maybe_request_commit(
+    run_dir: Path,
+    state: dict[str, Any],
+    key: str,
+    mode: str,
+    implementation_phase: str | None = None,
+) -> str | None:
     commits = state.setdefault("commits", {})
-    commits[key] = {
-        "mode": mode,
-        "status": "completed" if result.returncode == 0 else "failed",
-        "exit_code": result.returncode,
-        "stdout": trim_output(result.stdout),
-        "stderr": trim_output(result.stderr),
-        "head_after": git_head(root),
-        "updated_at": now_iso(),
-    }
-    if result.returncode != 0:
-        state["status"] = "waiting_user"
-        state["needs_user"] = True
-    return result
+    existing = commits.get(key)
+    if isinstance(existing, dict) and existing.get("status") == "completed":
+        return None
+    command = commit_helper_command(state, key, mode, implementation_phase)
+    if not (isinstance(existing, dict) and existing.get("status") == "pending"):
+        commits[key] = {
+            "mode": mode,
+            "status": "pending",
+            "implementation_phase": implementation_phase,
+            "command": shell_join(command),
+            "updated_at": now_iso(),
+        }
+        save_json(run_dir / "state.json", state)
+    return commit_skill_prompt(state, key, mode, implementation_phase, command)
 
 
 def maybe_commit_implementation_phase(root: Path, run_dir: Path, state: dict[str, Any], phase_id: str) -> str | None:
     if str(state.get("commit_mode", "none")) != "phase":
         return None
     key = f"implementation_{phase_id}"
-    existing = state.get("commits", {}).get(key)
-    if isinstance(existing, dict) and existing.get("status") == "completed":
+    return maybe_request_commit(run_dir, state, key, "implementation-phase", phase_id)
+
+
+def maybe_commit_final(run_dir: Path, state: dict[str, Any]) -> str | None:
+    if str(state.get("commit_mode", "none")) != "final":
         return None
-    result = run_commit_helper(root, state, key, "implementation-phase", phase_id)
-    save_json(run_dir / "state.json", state)
-    if result.returncode != 0:
-        update_index(root, str(state.get("run_id")), "waiting_user")
-        return commit_failure_prompt(state, key, result)
-    return None
+    return maybe_request_commit(run_dir, state, "final", "completed")
 
 
 def mark_run_finished(root: Path, run_dir: Path, state: dict[str, Any], status: str) -> str | None:
     state["status"] = status
     state["completed_at" if status == "completed" else "failed_at"] = now_iso()
     save_json(run_dir / "state.json", state)
-    if status == "completed" and str(state.get("commit_mode", "none")) == "final":
-        key = "final"
-        existing = state.get("commits", {}).get(key)
-        if not (isinstance(existing, dict) and existing.get("status") == "completed"):
-            result = run_commit_helper(root, state, key, "completed")
-            save_json(run_dir / "state.json", state)
-            if result.returncode != 0:
-                update_index(root, str(state.get("run_id")), "waiting_user")
-                return commit_failure_prompt(state, key, result)
     update_index(root, str(state.get("run_id")), state.get("status", status))
     clear_active(root)
     return None
@@ -630,6 +629,9 @@ def handle_evaluate_completed(
         return None
     evaluation_status = state.get("evaluation", {}).get("status")
     if evaluation_status in ("pass", "warn"):
+        commit_prompt = maybe_commit_final(run_dir, state)
+        if commit_prompt:
+            return commit_prompt
         return mark_run_finished(root, run_dir, state, "completed")
     if evaluation_status == "fail":
         if loop_current(state) >= loop_max(state):

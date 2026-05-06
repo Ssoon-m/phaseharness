@@ -12,13 +12,13 @@ from that source.
 The canonical source is:
 
 ```text
-https://github.com/Ssoon-m/phaseloop
+https://github.com/Ssoon-m/phaseharness
 ```
 
 By default, install from:
 
 ```text
-https://github.com/Ssoon-m/phaseloop.git
+https://github.com/Ssoon-m/phaseharness.git
 ```
 
 Optional overrides:
@@ -29,7 +29,7 @@ Optional overrides:
 Local development override:
 
 ```bash
-export HARNESS_SOURCE=/absolute/path/to/phaseloop
+export HARNESS_SOURCE=/absolute/path/to/phaseharness
 ```
 
 Fork override:
@@ -67,7 +67,9 @@ Phaseharness-owned target paths:
 - `.codex/config.toml` `codex_hooks` flag and managed permissions
 - `.codex/hooks.json` phaseharness `SessionStart`/`Stop` hook entries
 - `.claude/skills/phaseharness`
+- `.claude/skills/commit`
 - `.agents/skills/phaseharness`
+- `.agents/skills/commit`
 - `.claude/agents/phaseharness-*.md`
 - `.codex/agents/phaseharness-*.toml`
 
@@ -81,13 +83,14 @@ test -f "$HARNESS_SOURCE/core/.phaseharness/config.toml"
 test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-hook.py"
 test -f "$HARNESS_SOURCE/core/.phaseharness/bin/phaseharness-sync-bridges.py"
 test -f "$HARNESS_SOURCE/core/.phaseharness/skills/phaseharness/SKILL.md"
+test -f "$HARNESS_SOURCE/core/.phaseharness/skills/commit/SKILL.md"
 ```
 
 If `HARNESS_SOURCE` is not set, clone to a temp directory:
 
 ```bash
-HARNESS_REPO_URL="${HARNESS_REPO_URL:-https://github.com/Ssoon-m/phaseloop.git}"
-HARNESS_SOURCE="$(mktemp -d)/phaseloop"
+HARNESS_REPO_URL="${HARNESS_REPO_URL:-https://github.com/Ssoon-m/phaseharness.git}"
+HARNESS_SOURCE="$(mktemp -d)/phaseharness"
 git clone --depth=1 "$HARNESS_REPO_URL" "$HARNESS_SOURCE"
 ```
 
@@ -157,7 +160,9 @@ Expected managed paths:
 - `.codex/config.toml`
 - `.codex/hooks.json`
 - `.claude/skills/phaseharness`
+- `.claude/skills/commit`
 - `.agents/skills/phaseharness`
+- `.agents/skills/commit`
 - `.claude/agents/phaseharness-*.md`
 - `.codex/agents/phaseharness-*.toml`
 
@@ -169,7 +174,7 @@ The installer generates provider-native subagent bridge files from
 
 The SessionStart hook must resync provider bridge files from `.phaseharness/`.
 It must not create, resume, or advance runs. This keeps
-`.phaseharness/subagents/*.md`, `.phaseharness/skills/phaseharness/`, and
+`.phaseharness/subagents/*.md`, `.phaseharness/skills/`, and
 `.phaseharness/config.toml` as the SSOT while avoiding loop activation for
 normal sessions.
 
@@ -265,7 +270,7 @@ Use this final report shape. Keep the next step skill-first and copy/pasteable.
 
 ````text
 Installed phaseharness from:
-https://github.com/Ssoon-m/phaseloop/blob/main/installer/install-harness.md
+https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 
 Created/updated:
 - .phaseharness/
@@ -273,7 +278,9 @@ Created/updated:
 - .codex/config.toml codex_hooks flag
 - .codex/hooks.json phaseharness SessionStart/Stop hook entries
 - .claude/skills/phaseharness
+- .claude/skills/commit
 - .agents/skills/phaseharness
+- .agents/skills/commit
 - .claude/agents/phaseharness-*.md
 - .codex/agents/phaseharness-*.toml
 
@@ -298,6 +305,6 @@ Option meanings:
   not a whole-workflow restart count.
 - commit mode:
   - `none`: do not create commits automatically.
-  - `phase`: commit product changes after each planned implementation phase.
-  - `final`: create one product commit after `evaluate` passes or warns.
+  - `phase`: use the installed `commit` skill after each planned implementation phase.
+  - `final`: use the installed `commit` skill after `evaluate` passes or warns.
 ````

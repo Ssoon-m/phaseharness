@@ -388,8 +388,8 @@ def install_codex_hooks(root: Path, config: dict[str, Any]) -> list[Path]:
     return [config_path, hooks_path]
 
 
-def link_or_copy_skill(root: Path, target: Path) -> Path:
-    source = root / ".phaseharness" / "skills" / "phaseharness"
+def link_or_copy_skill(root: Path, skill_name: str, target: Path) -> Path:
+    source = root / ".phaseharness" / "skills" / skill_name
     target.parent.mkdir(parents=True, exist_ok=True)
     if target.exists() or target.is_symlink():
         if target.is_symlink() and target.resolve() == source.resolve():
@@ -399,7 +399,7 @@ def link_or_copy_skill(root: Path, target: Path) -> Path:
             return target
         return target
     try:
-        rel_source = Path("..") / ".." / ".phaseharness" / "skills" / "phaseharness"
+        rel_source = Path("..") / ".." / ".phaseharness" / "skills" / skill_name
         target.symlink_to(rel_source, target_is_directory=True)
     except OSError:
         shutil.copytree(source, target)
@@ -407,10 +407,13 @@ def link_or_copy_skill(root: Path, target: Path) -> Path:
 
 
 def install_skill_bridges(root: Path) -> list[Path]:
-    return [
-        link_or_copy_skill(root, root / ".claude" / "skills" / "phaseharness"),
-        link_or_copy_skill(root, root / ".agents" / "skills" / "phaseharness"),
-    ]
+    changed: list[Path] = []
+    skills_root = root / ".phaseharness" / "skills"
+    for source in sorted(path for path in skills_root.iterdir() if path.is_dir()):
+        skill_name = source.name
+        changed.append(link_or_copy_skill(root, skill_name, root / ".claude" / "skills" / skill_name))
+        changed.append(link_or_copy_skill(root, skill_name, root / ".agents" / "skills" / skill_name))
+    return changed
 
 
 def canonical_subagent_prompt(root: Path, item: dict[str, str]) -> str:

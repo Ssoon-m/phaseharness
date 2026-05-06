@@ -124,8 +124,10 @@ python3 .phaseharness/bin/phaseharness-state.py start --request "<request>" --lo
 - If user input is required, set run `status` to `waiting_user`, set
   `needs_user` to `true`, write the question into the current artifact, and
   ask the user. The Stop hook will not continue while waiting.
-- Commit modes exclude `.phaseharness/` runtime files and managed provider
-  hook/skill bridge files from product commits.
+- Commit modes use the installed `commit` skill when the Stop hook reaches a
+  `phase` or `final` commit point. The helper command in that prompt excludes
+  `.phaseharness/` runtime files and managed provider hook/skill bridge files
+  from product commits.
 - Do not push.
 
 ## Artifact Paths

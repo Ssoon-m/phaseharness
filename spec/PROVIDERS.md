@@ -79,6 +79,6 @@ No-op output:
 - Hooks must respect `loop_count`: an `evaluate` failure may return to
   `generate` only when a pending follow-up implementation phase exists and
   `loop.current < loop.max`.
-- Hooks must respect `commit_mode`: `none` never commits, `phase` commits
-  product changes after each implementation phase, and `final` commits product
-  changes after a pass/warn `evaluate`.
+- Hooks must respect `commit_mode`: `none` never commits, `phase` prompts the
+  parent agent to use the installed `commit` skill after each implementation
+  phase, and `final` prompts the `commit` skill after a pass/warn `evaluate`.

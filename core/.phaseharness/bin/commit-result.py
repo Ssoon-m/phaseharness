@@ -6,6 +6,7 @@ import json
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -36,6 +37,15 @@ def load_json(path: Path, default: Any | None = None) -> Any:
             return default
         raise FileNotFoundError(path)
     return json.loads(path.read_text())
+
+
+def save_json(path: Path, data: Any) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+
+
+def now_iso() -> str:
+    return datetime.now(timezone.utc).astimezone().strftime("%Y-%m-%dT%H:%M:%S%z")
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -90,7 +100,15 @@ def is_harness_managed_path(path: str) -> bool:
         return True
     if normalized == ".claude/skills/phaseharness" or normalized.startswith(".claude/skills/phaseharness/"):
         return True
+    if normalized == ".claude/skills/commit" or normalized.startswith(".claude/skills/commit/"):
+        return True
     if normalized == ".agents/skills/phaseharness" or normalized.startswith(".agents/skills/phaseharness/"):
+        return True
+    if normalized == ".agents/skills/commit" or normalized.startswith(".agents/skills/commit/"):
+        return True
+    if normalized.startswith(".claude/agents/phaseharness-"):
+        return True
+    if normalized.startswith(".codex/agents/phaseharness-"):
         return True
     return False
 
@@ -142,10 +160,23 @@ def resolve_run_dir(root: Path, run_id: str | None) -> Path:
     raise RuntimeError(f"run not found: {run_id}")
 
 
+def update_index(root: Path, run_id: str, status: str) -> None:
+    path = root / ".phaseharness" / "state" / "index.json"
+    index = load_json(path, {"schema_version": 1, "runs": []})
+    for item in index.get("runs", []):
+        if isinstance(item, dict) and item.get("run_id") == run_id:
+            item["status"] = status
+            item["updated_at"] = now_iso()
+            break
+    save_json(path, index)
+
+
 def validate_run_for_commit(run_dir: Path, mode: str, implementation_phase: str | None) -> dict[str, Any]:
     state = load_json(run_dir / "state.json")
     if mode == "completed":
-        if state.get("status") != "completed":
+        phases = state.get("phases", {}) if isinstance(state.get("phases"), dict) else {}
+        evaluate = phases.get("evaluate", {}) if isinstance(phases.get("evaluate"), dict) else {}
+        if state.get("status") != "completed" and evaluate.get("status") != "completed":
             raise RuntimeError(f"run is not completed: {run_dir.name}")
         evaluation = state.get("evaluation", {})
         evaluation_status = evaluation.get("status") if isinstance(evaluation, dict) else None
@@ -167,7 +198,7 @@ def validate_run_for_commit(run_dir: Path, mode: str, implementation_phase: str 
 def stage_paths(root: Path, paths: list[str]) -> None:
     for start in range(0, len(paths), 100):
         chunk = paths[start : start + 100]
-        result = git(root, "add", "-A", "--", *chunk)
+        result = git(root, "add", "--", *chunk)
         if result.returncode != 0:
             raise RuntimeError(result.stderr.strip() or result.stdout.strip())
 
@@ -231,6 +262,34 @@ def commit_result(
     return result.returncode
 
 
+def record_commit_state(
+    root: Path,
+    run_dir: Path,
+    key: str,
+    mode: str,
+    implementation_phase: str | None,
+    exit_code: int,
+) -> None:
+    state_path = run_dir / "state.json"
+    state = load_json(state_path)
+    commits = state.setdefault("commits", {})
+    record: dict[str, Any] = {
+        "mode": mode,
+        "status": "completed" if exit_code == 0 else "failed",
+        "exit_code": exit_code,
+        "head_after": git_head(root),
+        "updated_at": now_iso(),
+    }
+    if implementation_phase:
+        record["implementation_phase"] = implementation_phase
+    commits[key] = record
+    if exit_code != 0:
+        state["status"] = "waiting_user"
+        state["needs_user"] = True
+        update_index(root, str(state.get("run_id")), "waiting_user")
+    save_json(state_path, state)
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Commit a completed phaseharness run result.")
     parser.add_argument("run_id", nargs="?", help="Run id under .phaseharness/runs/. Defaults to latest completed run.")
@@ -240,12 +299,15 @@ def main() -> int:
     parser.add_argument("--allow-head-move", action="store_true", help="Allow commit even if HEAD changed after the run started")
     parser.add_argument("--mode", choices=["completed", "implementation-phase"], default="completed")
     parser.add_argument("--implementation-phase", default=None, help="Implementation phase id for --mode implementation-phase")
+    parser.add_argument("--record-state-key", default=None, help="Record this commit attempt under state.commits[KEY]")
     args = parser.parse_args()
 
     root = find_project_root()
+    run_dir: Path | None = None
+    exit_code = 1
     try:
         run_dir = resolve_run_dir(root, args.run_id)
-        return commit_result(
+        exit_code = commit_result(
             root,
             run_dir,
             args.message,
@@ -255,8 +317,16 @@ def main() -> int:
             args.mode,
             args.implementation_phase,
         )
+        return exit_code
     except Exception as exc:
-        return fail(str(exc))
+        exit_code = fail(str(exc))
+        return exit_code
+    finally:
+        if args.record_state_key and run_dir is not None and not args.dry_run:
+            try:
+                record_commit_state(root, run_dir, args.record_state_key, args.mode, args.implementation_phase, exit_code)
+            except Exception as exc:
+                print(f"[phaseharness] error: failed to record commit state: {exc}", file=sys.stderr, flush=True)
 
 
 if __name__ == "__main__":
