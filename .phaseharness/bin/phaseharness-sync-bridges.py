@@ -132,16 +132,16 @@ def ensure_codex_feature_flag(path: Path) -> None:
             continue
         cursor = index + 1
         while cursor < len(lines) and not section_header.match(lines[cursor]):
-            if re.match(r"^\s*codex_hooks\s*=", lines[cursor]):
-                lines[cursor] = "codex_hooks = true"
+            if re.match(r"^\s*hooks\s*=", lines[cursor]):
+                lines[cursor] = "hooks = true"
                 path.write_text("\n".join(lines).rstrip() + "\n")
                 return
             cursor += 1
-        lines.insert(index + 1, "codex_hooks = true")
+        lines.insert(index + 1, "hooks = true")
         path.write_text("\n".join(lines).rstrip() + "\n")
         return
     prefix = "\n\n" if text.strip() else ""
-    path.write_text(text.rstrip() + f"{prefix}[features]\ncodex_hooks = true\n")
+    path.write_text(text.rstrip() + f"{prefix}[features]\nhooks = true\n")
 
 
 def install_codex_hooks(root: Path) -> list[Path]:

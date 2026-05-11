@@ -70,7 +70,7 @@ python3 .phaseharness/bin/phaseharness-sync-bridges.py
 This creates or updates:
 
 - `.claude/settings.json` phaseharness `SessionStart` and `Stop` hook entries
-- `.codex/config.toml` `codex_hooks = true`
+- `.codex/config.toml` `[features].hooks = true`
 - `.codex/hooks.json` phaseharness `SessionStart` and `Stop` hook entries
 - `.claude/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
 - `.agents/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
