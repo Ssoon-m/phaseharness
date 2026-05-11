@@ -18,9 +18,9 @@ Reprompt of running stage: `{{REPROMPT}}`
 
 - Use the required skill for this stage and perform only that stage.
 - Rebuild context from `{{RUN_PATH}}`, artifacts, and phase files. Do not rely on conversation memory.
-- Do not start another stage in this turn.
+- Perform only the current stage in this turn. After updating state, stop normally so the Stop hook can request the next continuation prompt.
 - Write or append the required artifact before marking work complete.
-- Update state with `.phaseharness/bin/phaseharness-state.py` before ending.
+- Update state with `.phaseharness/bin/phaseharness-state.py` before ending. A completed stage must be recorded as `completed`; otherwise the Stop hook will re-enter the same stage.
 - If user input is required, record the question in the artifact, set this stage to `waiting_user`, and stop.
 
 ## Stage Delegation
