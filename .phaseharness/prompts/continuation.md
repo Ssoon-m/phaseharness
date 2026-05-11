@@ -5,7 +5,7 @@ Continue the active phaseharness run from durable files only.
 Run id: `{{RUN_ID}}`
 Request: {{REQUEST}}
 Current stage: `{{STAGE}}`
-Required skill: `${{SKILL}}`
+Required skill: `{{SKILL}}`
 Run file: `{{RUN_PATH}}`
 Required artifact: `{{ARTIFACT_PATH}}`
 Loop: `{{LOOP_CURRENT}}` of `{{LOOP_COUNT}}`
