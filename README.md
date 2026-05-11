@@ -1,160 +1,238 @@
-# phaseharness
+# Phaseharness
 
-Installable `phaseharness` workflow for Claude Code and Codex.
+Phaseharness is a file-based workflow system for large AI coding tasks.
 
-This repository ships a canonical harness that is copied into a target
-repository under `.phaseharness/`. The installed harness uses provider
-`SessionStart` hooks to resync bridge files and provider `Stop` hooks plus
-durable files to continue a task through:
+Work proceeds through these stages:
 
 ```text
-clarify -> context gather -> plan -> generate -> evaluate
+clarify -> context_gather -> plan -> generate -> evaluate
 ```
 
-The Stop hook is installed at the provider configuration layer, but it is inert
-by default. It continues work only after the user explicitly invokes the
-`phaseharness` skill and that skill creates an active run file.
+Instead of relying on chat history, each task keeps its progress in files:
 
-## Install
+```text
+.phaseharness/runs/<run-id>/
+```
 
-Open Claude Code or Codex in the target repository and ask:
+This makes long tasks easier to pause, resume, inspect, and avoid duplicating.
+
+## What It Does
+
+Phaseharness splits large coding work into these steps:
+
+- clarify requirements
+- inspect repository structure and related files
+- create independently implementable phase files
+- implement one phase at a time
+- evaluate the current diff against the agreed criteria
+
+The Python state management script only reads and writes state files and prints the next prompt. It does not run a model, create subagents, edit product code, evaluate results, or run `git commit`.
+
+## Getting Started With Phaseharness
+
+Open your coding agent in the repository where you want to install Phaseharness, then enter:
 
 ```text
 Install phaseharness from this installer document:
 https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 ```
 
-The installer copies `core/.phaseharness/` into the target repository, installs
-Claude/Codex `SessionStart` and `Stop` hook entries, exposes the
-`phaseharness` and `commit` skills, generates provider-native subagent bridge
-files, and runs smoke verification.
+## Quick Start
 
-## Run A Task
-
-Use the installed skill explicitly:
+Ask the agent to use the workflow skill:
 
 ```text
-Use the phaseharness skill to implement <request> with loop count 2, max attempts per phase 2, and commit mode none.
+Use `phaseharness` to implement <task>.
 ```
 
-If loop count, max attempts per phase, or commit mode are omitted, the skill
-must ask once before it creates an active run. Loop count is the maximum number
-of `generate -> evaluate` cycles. Max attempts per phase is the retry budget for
-each planned implementation phase. Commit modes are `none`, `final`, and
-`phase`.
+Before creating a run, `phaseharness` checks these options:
 
-## Run Options
+- `loop count`: maximum number of `generate -> evaluate` cycles
+- `commit mode`: one of `none`, `phase`, `final`
 
-`loop count` controls how many full build-review cycles a run can make. One
-loop means the planned implementation phases run once, then `evaluate` decides
-`pass`, `warn`, or `fail`. When `evaluate` fails and queues follow-up phase
-files, the next loop returns to `generate`. A loop count of `2` allows one
-follow-up build-review cycle after the first evaluation failure.
+Defaults:
 
-`max attempts per phase` controls retries inside each executable phase. During
-`generate`, it applies separately to every planned implementation phase such as
-`phase-001` and `phase-002`. It does not mean the whole workflow restarts.
+```text
+loop count: 2
+commit mode: none
+```
 
-`commit mode` controls product commits:
+After confirmation, `phaseharness` creates a run and starts the first stage from the run files.
 
-- `none`: do not create commits automatically.
-- `phase`: commit product changes after each planned implementation phase
-  completes.
-- `final`: create one product commit after `evaluate` passes or warns.
+## Manual Skills
 
-Commit mode uses the installed `commit` skill. The helper command in that
-prompt excludes `.phaseharness/` runtime state and managed provider bridge
-files by default.
+You can run each stage directly:
 
-General questions, short explanations, reviews, and one-off commands do not
-activate the loop. Activation requires `.phaseharness/state/active.json` with
-`activation_source: "phaseharness_skill"`.
+- `clarify`: organize requirements, success criteria, scope, non-goals, assumptions, and open questions.
+- `context-gather`: collect repository structure, relevant files, existing patterns, constraints, risks, and validation commands.
+- `plan`: create `artifacts/plan.md` and self-contained `phases/phase-NNN.md` files. Split feature slices, long-running work, work with different validation criteria, and work with different risk profiles into separate phases.
+- `generate`: implement exactly one existing phase file. Do not use it as a general implementation command.
+- `evaluate`: verify whether the current diff satisfies the task criteria.
+- `commit`: create a meaningful commit when the user explicitly requests it or when Phaseharness creates a commit prompt.
 
-If a conversation is interrupted, invoke the `phaseharness` skill again and ask
-it to continue the active run. Resume is explicit so unrelated prompts in a new
-session do not restart the loop.
+Manual skill runs perform one stage and stop. They do not continue automatically through the Stop hook.
 
-## Where State Lives
+## Phase Splitting Criteria
 
-All canonical harness files and runtime state live under `.phaseharness/`:
+`plan` prioritizes independent implementation and independent review over minimizing the number of phases.
 
-- `.phaseharness/bin/`: state, hook, bridge sync, and commit helpers
-- `.phaseharness/hooks/`: provider hook wrappers
-- `.phaseharness/skills/`: skill instructions
-- `.phaseharness/subagents/`: phase-specific subagent instructions
-- `.phaseharness/runs/`: per-run artifacts and state
-- `.phaseharness/state/`: active run pointer and run index
+Split phases when:
 
-Run this command to resync provider bridge files from the `.phaseharness/`
-SSOT:
+- a user-visible feature or behavior can be completed independently
+- the work is likely to take a long time or touch many files
+- the work has a different risk profile, such as data structure changes, state handling, UI behavior, external integration, or test infrastructure
+- validation commands or acceptance criteria differ
+- a preparatory step reduces uncertainty for later work
+- target files, allowed changes, or forbidden changes would otherwise become too broad
+
+Avoid splitting only by file. Each phase should be implementable by a fresh implementer without chat memory, and reviewable by a fresh reviewer using only the phase file and diff.
+
+## Automatic Runs
+
+Only `phaseharness` creates automatic runs. The Stop hook can continue only automatic runs.
+
+The Stop hook calls only this command:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-sync-bridges.py
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
 ```
 
-The installed `SessionStart` hook runs the same bridge sync silently at session
-startup/resume, so edits to `.phaseharness/subagents/*.md`,
-`.phaseharness/skills/`, or `.phaseharness/config.toml` are
-reflected in provider bridge files before the session starts handling prompts.
+The Stop hook does not run a model, create a subagent, edit files, evaluate, or commit. It only asks the state management script for the next prompt and passes that prompt to the current session.
 
-Provider-required files outside `.phaseharness/` are limited to managed hook
-entries, skill symlinks, and provider-native subagent bridge files:
+If a stage remains `running`, `--reprompt-running` returns a prompt to re-enter the same stage instead of starting new work.
 
-- `.claude/settings.json`
-- `.codex/config.toml`
-- `.codex/hooks.json`
-- `.claude/skills/phaseharness`
-- `.claude/skills/commit`
-- `.agents/skills/phaseharness`
-- `.agents/skills/commit`
-- `.claude/agents/phaseharness-*.md`
-- `.codex/agents/phaseharness-*.toml`
+## Roles
 
-## Subagent Behavior
+The current conversation session controls the run.
 
-Phaseharness installs provider-native subagent bridge files. Provider hooks run
-as shell commands, so they cannot call provider subagent APIs themselves. The
-Stop hook returns a continuation prompt whose first required action is a direct
-call to the phase-specific subagent:
+- `clarify`, `context-gather`, and `plan` are performed by the current conversation session.
+- `generate` delegates exactly one phase file to one new implementation subagent.
+- `evaluate` delegates to one new review subagent.
+- Subagents do not call state commands.
+- Subagents do not change run state.
+- Subagents do not commit.
+- Subagents report the assigned result and stop. The current conversation session closes the subagent session when the provider supports it.
+- The current conversation session writes artifacts, reviews subagent results, updates state, and handles commit prompts.
 
-- Claude Code: `phaseharness-clarify`, `phaseharness-context-gather`,
-  `phaseharness-plan`, `phaseharness-generate`, `phaseharness-evaluate`
-- Codex: `phaseharness_clarify`, `phaseharness_context_gather`,
-  `phaseharness_plan`, `phaseharness_generate`, `phaseharness_evaluate`
+Phaseharness does not predefine subagents during installation. The `generate` and `evaluate` skills create new subagent requests when those stages run.
 
-The parent conversation must not perform phase work itself. If the provider
-cannot invoke the subagent from a Stop-hook continuation, the run is set to
-`waiting_user` with a `subagent_unavailable` error instead of falling back to
-local execution.
+## Run Files
 
-## Permission Behavior
+Each run has these files:
 
-`.phaseharness/config.toml` is the SSOT for managed provider permissions. The
-permission tables intentionally mirror provider-native keys where practical:
+```text
+.phaseharness/runs/<run-id>/
+  run.json
+  artifacts/
+    clarify.md
+    context.md
+    plan.md
+    generate.md
+    evaluate.md
+  phases/
+    phase-001.md
+    phase-002.md
+```
 
-- `[permissions.claude.settings.permissions]` maps to
-  `.claude/settings.json` `permissions`.
-- `[permissions.claude.subagents]` maps to Claude Code subagent frontmatter.
-- `[permissions.codex.config]` maps to Codex config/custom-agent keys such as
-  `approval_policy`, `sandbox_mode`, and `sandbox_workspace_write.*`.
+`run.json` records:
 
-The default profile is broad so each loop phase does not repeatedly stop for
-approvals.
+- current stage
+- manual or automatic mode
+- loop count
+- commit mode
+- stage statuses
+- generate phase queue
+- evaluate result
+- commit prompt results
+- files that were already changed when the run started
 
-These settings are intentionally broad. Install phaseharness only into
-repositories where the provider is allowed to edit and run project commands
-without repeated approval prompts.
-After installation, users may lower these permission settings in
-`.phaseharness/config.toml` and rerun the bridge sync command if they prefer
-more approval prompts.
+## State Management Commands
 
-## Development
-
-Run local verification:
+Create an automatic run:
 
 ```bash
-python3 tests/smoke_install.py
-python3 -m py_compile core/.phaseharness/bin/*.py tests/smoke_install.py
+python3 .phaseharness/bin/phaseharness-state.py start \
+  --mode auto \
+  --request "<request>" \
+  --loop-count 2 \
+  --commit-mode none \
+  --json
 ```
 
-For implementation details, see `SPEC.md` and `spec/`.
+Check status:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py status --json
+```
+
+Create the next continuation prompt:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+```
+
+Record a stage status:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py set-stage clarify completed --run-id <run-id>
+```
+
+Record a generate phase status:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py set-generate-phase phase-001 completed --run-id <run-id>
+```
+
+Record a commit prompt result:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py set-commit phase-001 committed --run-id <run-id>
+python3 .phaseharness/bin/phaseharness-state.py set-commit final no_changes --run-id <run-id> --message "no eligible changes to commit"
+```
+
+## Commit Mode
+
+- `none`: do not create commit prompts.
+- `phase`: request a commit whenever a generate phase completes.
+- `final`: request one final commit when `evaluate` is `pass` or `warn`.
+
+Commit prompts include:
+
+- run id
+- commit key
+- commit mode
+- files eligible for commit
+- files skipped because they were already changed before the run started
+- runtime files and tool connection files skipped by default
+- required `set-commit` follow-up command
+
+Only `commit` should run the actual git commit. The commit message should describe the real change, not merely state that a phase finished.
+
+## Safety Rules
+
+Phaseharness separates workflow control from execution.
+
+- `phaseharness-state.py` only manages run files and prompts.
+- `phaseharness-hook.py` is a Stop hook wrapper.
+- Stop hooks do nothing unless an automatic run is active.
+- Manual skill runs do not continue automatically.
+- Runtime files and tool connection files are excluded from commit prompts.
+- Files that were already changed when a run started are excluded from commit prompts.
+
+## Smoke Check
+
+After installation, verify with:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py --help
+python3 .phaseharness/bin/phaseharness-hook.py --help
+python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
+python3 -m py_compile .phaseharness/bin/*.py
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+```
+
+When no run is active, the expected output includes:
+
+```json
+{ "action": "none" }
+```

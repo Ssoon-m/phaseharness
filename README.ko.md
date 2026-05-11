@@ -1,158 +1,238 @@
-# phaseharness
+# Phaseharness
 
-Claude Code와 Codex에서 사용할 수 있는 설치형 `phaseharness` workflow입니다.
+Phaseharness는 큰 AI 코딩 작업을 파일 기반 단계로 나누어 진행하는 workflow 시스템입니다.
 
-이 저장소는 대상 repository에 `.phaseharness/` 디렉터리로 복사되는 canonical
-harness를 제공합니다. 설치된 harness는 provider의 `SessionStart` hook으로
-bridge 파일을 다시 동기화하고, `Stop` hook과 파일 상태로 하나의 작업을 아래
-순서로 진행합니다.
+phaseharness 스킬 사용시 작업은 아래 순서로 진행됩니다.
 
 ```text
-clarify -> context gather -> plan -> generate -> evaluate
+clarify -> context_gather -> plan -> generate -> evaluate
 ```
 
-Stop hook은 provider 설정에 설치되지만 기본적으로 비활성입니다. 사용자가
-`phaseharness` skill을 명시적으로 호출하고 skill이 active run 파일을 만들 때만
-loop가 이어집니다.
+대화 기록에 의존하지 않고, 각 작업의 진행 기록을 파일로 남깁니다.
 
-## 설치
+```text
+.phaseharness/runs/<run-id>/
+```
 
-대상 저장소에서 Claude Code 또는 Codex를 열고 아래 요청을 전달합니다.
+이 구조로 인해 긴 작업을 중간에 멈췄다가 다시 이어가거나, 현재 상태를 검토하거나, 중복 실행을 피하기 쉽습니다.
+
+## 무엇을 하는가
+
+Phaseharness는 작업을 아래처럼 나눕니다.
+
+- 요구사항을 명확히 정리합니다.
+- 저장소 구조와 관련 파일을 조사합니다.
+- 독립적으로 구현 가능한 phase 파일을 만듭니다.
+- phase 하나씩 구현합니다.
+- 현재 diff가 합의한 기준을 만족하는지 평가합니다.
+
+Python 상태 관리 스크립트는 상태 파일을 읽고 쓰며 다음 prompt를 출력할 뿐입니다. 모델을 실행하거나, subagent를 만들거나, 실제 코드를 수정하거나, 결과를 평가하거나, `git commit`을 실행하지 않습니다.
+
+## phaseharness 시작하기
+
+Phaseharness를 설치할 저장소에서 사용 중인 agent를 실행시켜 아래 문장을 입력하세요.
 
 ```text
 Install phaseharness from this installer document:
 https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 ```
 
-Installer는 `core/.phaseharness/`를 대상 저장소의 `.phaseharness/`로 복사하고,
-Claude/Codex `SessionStart`와 `Stop` hook entry, `phaseharness`와 `commit`
-skill bridge, provider-native subagent bridge를 설치한 뒤 smoke verification을
-실행합니다.
+## 빠른 시작
 
-## 작업 실행
-
-설치된 skill을 명시적으로 사용합니다.
+agent에게 workflow skill 사용을 요청합니다.
 
 ```text
-Use the phaseharness skill to implement <request> with loop count 2, max attempts per phase 2, and commit mode none.
+Use `phaseharness` to implement <task>.
 ```
 
-Loop count, max attempts per phase, commit mode가 빠져 있으면 skill은 active
-run을 만들기 전에 한 번 질문해야 합니다. Loop count는 `generate -> evaluate`
-cycle의 최대 횟수이고, max attempts per phase는 plan에서 나뉜 각 implementation
-phase의 retry budget입니다. Commit mode는 `none`, `final`, `phase` 중
-하나입니다.
+run을 만들기 전에 `phaseharness`는 아래 옵션을 확인합니다.
 
-## 실행 옵션
+- `loop count`: `generate -> evaluate` cycle 최대 횟수
+- `commit mode`: `none`, `phase`, `final` 중 하나
 
-`loop count`는 전체 build-review cycle의 최대 횟수입니다. 한 loop에서는 계획된
-implementation phase를 `generate`가 처리하고, `evaluate`가 `pass`, `warn`,
-`fail`을 판정합니다. `evaluate`가 실패하고 follow-up phase 파일을 추가하면 다음
-loop에서 다시 `generate`로 돌아갑니다. `loop count 2`는 첫 평가 실패 뒤 한 번의
-추가 build-review cycle을 허용한다는 뜻입니다.
+기본값은 아래와 같습니다.
 
-`max attempts per phase`는 각 실행 phase의 retry budget입니다. `generate`에서는
-`phase-001`, `phase-002` 같은 계획된 implementation phase마다 따로 적용됩니다.
-전체 workflow를 처음부터 다시 시작하는 횟수가 아닙니다.
+```text
+loop count: 2
+commit mode: none
+```
 
-`commit mode`는 product commit 생성 방식을 정합니다.
+확인이 끝나면 `phaseharness`가 run을 만들고, run 파일 기준으로 첫 단계를 시작합니다.
 
-- `none`: 자동 commit을 만들지 않습니다.
-- `phase`: 계획된 implementation phase가 완료될 때마다 product change를 commit합니다.
-- `final`: `evaluate`가 `pass` 또는 `warn`이면 product commit 하나를 만듭니다.
+## 수동 skill
 
-Commit mode는 설치된 `commit` skill을 사용합니다. 해당 prompt의 helper
-command는 기본적으로 `.phaseharness/` runtime state와 provider bridge 파일을
-product commit에서 제외합니다.
+각 단계를 직접 실행할 수도 있습니다.
 
-일반 질문, 짧은 설명, 리뷰, 단발성 명령은 loop를 활성화하지 않습니다.
-Activation은 `.phaseharness/state/active.json`에
-`activation_source: "phaseharness_skill"`이 있을 때만 성립합니다.
+- `clarify`: 요구사항, 성공 기준, 범위, 제외 범위, 가정, 열린 질문을 정리합니다.
+- `context-gather`: 저장소 구조, 관련 파일, 기존 패턴, 제약, 리스크, 검증 명령을 수집합니다.
+- `plan`: `artifacts/plan.md`와 자기완결적인 `phases/phase-NNN.md` 파일을 만듭니다. 기능 단위, 오래 걸리는 작업, 검증 기준이 다른 작업, 위험도가 다른 작업은 별도 phase로 나눕니다.
+- `generate`: 이미 존재하는 phase 파일 하나만 구현합니다. 일반 구현 명령으로 쓰지 않습니다.
+- `evaluate`: 현재 diff가 작업 기준을 만족하는지 검증합니다.
+- `commit`: 사용자가 명시적으로 요청했거나 Phaseharness가 commit prompt를 만들었을 때 의미 있는 commit을 만듭니다.
 
-대화가 끊기면 다음 세션에서 `phaseharness` skill을 다시 호출해 active run을
-이어가라고 요청합니다. Resume도 명시적이어야 하므로 새 세션의 일반 질문이
-loop를 다시 시작하지 않습니다.
+수동 skill 실행은 한 단계만 수행하고 멈춥니다. Stop hook으로 다음 단계가 자동 진행되지 않습니다.
 
-## State 위치
+## Phase 분리 기준
 
-Canonical harness 파일과 runtime state는 모두 `.phaseharness/` 아래에 둡니다.
+`plan`은 phase 수를 줄이는 것보다 독립 구현과 독립 검증이 가능한지를 우선합니다.
 
-- `.phaseharness/bin/`: state, hook, bridge sync, commit helper
-- `.phaseharness/hooks/`: provider hook wrapper
-- `.phaseharness/skills/`: skill 지침
-- `.phaseharness/subagents/`: phase별 subagent 지침
-- `.phaseharness/runs/`: run별 artifact와 state
-- `.phaseharness/state/`: active run pointer와 run index
+phase를 나누는 기준은 아래와 같습니다.
 
-`.phaseharness/` SSOT 기준으로 provider bridge 파일을 다시 맞추려면 다음을
-실행합니다.
+- 사용자에게 보이는 기능이나 동작이 독립적으로 완성될 수 있으면 별도 phase로 나눕니다.
+- 작업이 오래 걸리거나 많은 파일을 건드릴 가능성이 있으면 더 작은 phase로 나눕니다.
+- 데이터 구조, 상태 처리, UI 동작, 외부 연동, 테스트 기반처럼 위험도가 다른 작업은 분리합니다.
+- 검증 명령이나 acceptance criteria가 다르면 분리합니다.
+- 이후 작업의 불확실성을 줄이는 준비 작업은 별도 phase로 둘 수 있습니다.
+- target files, allowed changes, forbidden changes가 너무 넓어지면 phase를 더 쪼갭니다.
+
+반대로 단순히 파일별로 나누는 것은 피합니다. 각 phase는 fresh implementer가 대화 기억 없이 구현할 수 있고, fresh reviewer가 phase 파일과 diff만 보고 검증할 수 있어야 합니다.
+
+## 자동 run
+
+자동 run은 `phaseharness`만 만듭니다. Stop hook은 자동 run만 이어갈 수 있습니다.
+
+Stop hook이 호출하는 명령은 아래 하나뿐입니다.
 
 ```bash
-python3 .phaseharness/bin/phaseharness-sync-bridges.py
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
 ```
 
-설치된 `SessionStart` hook도 세션 시작/재개 시 같은 bridge sync를 조용히
-실행합니다. 그래서 `.phaseharness/subagents/*.md`,
-`.phaseharness/skills/`, `.phaseharness/config.toml`을 수정하면
-provider bridge 파일에 세션 시작 전에 반영됩니다.
+Stop hook은 모델을 실행하지 않고, subagent를 만들지 않고, 파일을 수정하지 않고, 평가하지 않고, commit하지 않습니다. 상태 관리 스크립트에게 다음 prompt를 요청하고 그 prompt를 현재 session에 전달할 뿐입니다.
 
-`.phaseharness/` 밖에 남는 파일은 provider가 요구하는 hook entry, skill symlink,
-provider-native subagent bridge뿐입니다.
+어떤 단계가 `running` 상태로 남아 있으면 `--reprompt-running`은 새 작업을 시작하지 않고 같은 단계로 다시 들어가는 prompt를 반환합니다.
 
-- `.claude/settings.json`
-- `.codex/config.toml`
-- `.codex/hooks.json`
-- `.claude/skills/phaseharness`
-- `.claude/skills/commit`
-- `.agents/skills/phaseharness`
-- `.agents/skills/commit`
-- `.claude/agents/phaseharness-*.md`
-- `.codex/agents/phaseharness-*.toml`
+## 역할 구분
 
-## Subagent 동작
+현재 대화 session이 run을 제어합니다.
 
-Phaseharness는 provider-native subagent bridge 파일을 설치합니다. Provider
-hook은 shell command로 실행되므로 hook 자체가 provider subagent API를 호출할
-수는 없습니다. 대신 Stop hook이 반환하는 continuation prompt의 첫 필수 동작을
-phase별 subagent 직접 호출로 고정합니다.
+- `clarify`, `context-gather`, `plan`은 현재 대화 session이 수행합니다.
+- `generate`는 새 구현 subagent 하나에게 phase 파일 하나만 위임합니다.
+- `evaluate`는 새 검토 subagent 하나에게 위임합니다.
+- subagent는 state command를 호출하지 않습니다.
+- subagent는 run 상태를 바꾸지 않습니다.
+- subagent는 commit하지 않습니다.
+- subagent는 맡은 작업 결과를 보고한 뒤 종료합니다. 현재 대화 session은 가능한 경우 subagent session을 닫습니다.
+- 현재 대화 session은 artifact를 쓰고, subagent 결과를 검토하고, 상태를 갱신하고, commit prompt를 처리합니다.
 
-- Claude Code: `phaseharness-clarify`, `phaseharness-context-gather`,
-  `phaseharness-plan`, `phaseharness-generate`, `phaseharness-evaluate`
-- Codex: `phaseharness_clarify`, `phaseharness_context_gather`,
-  `phaseharness_plan`, `phaseharness_generate`, `phaseharness_evaluate`
+Phaseharness는 설치 시 subagent를 미리 정의하지 않습니다. `generate`와 `evaluate` skill이 해당 단계 실행 시 새 subagent 요청을 만듭니다.
 
-Parent conversation은 phase 작업을 직접 수행하지 않습니다. provider가
-Stop-hook continuation에서 subagent를 실행할 수 없으면 local fallback을 하지
-않고 `subagent_unavailable` 오류로 run을 `waiting_user` 상태로 둡니다.
+## Run 파일
 
-## 권한 동작
+하나의 run은 아래 파일들을 가집니다.
 
-`.phaseharness/config.toml`이 관리 대상 provider 권한의 SSOT입니다. 권한
-table은 가능한 provider native key 모양을 그대로 따릅니다.
+```text
+.phaseharness/runs/<run-id>/
+  run.json
+  artifacts/
+    clarify.md
+    context.md
+    plan.md
+    generate.md
+    evaluate.md
+  phases/
+    phase-001.md
+    phase-002.md
+```
 
-- `[permissions.claude.settings.permissions]`는 `.claude/settings.json`의
-  `permissions`로 매핑됩니다.
-- `[permissions.claude.subagents]`는 Claude Code subagent frontmatter로
-  매핑됩니다.
-- `[permissions.codex.config]`는 Codex config/custom-agent의
-  `approval_policy`, `sandbox_mode`, `sandbox_workspace_write.*` 같은 key로
-  매핑됩니다.
+`run.json`에는 아래 상태가 기록됩니다.
 
-기본 profile은 loop 중 매 phase마다 권한 확인으로 멈추지 않도록 넓게 열려
-있습니다.
+- 현재 stage
+- 수동/자동 mode
+- loop count
+- commit mode
+- stage별 상태
+- generate phase queue
+- evaluate 결과
+- commit prompt 처리 결과
+- run 시작 시점에 이미 변경되어 있던 파일 목록
 
-이 설정은 의도적으로 넓습니다. 반복 승인 없이 provider가 project command와
-파일 수정을 수행해도 되는 repository에만 phaseharness를 설치하세요.
-설치 후 더 보수적인 동작을 원하면 `.phaseharness/config.toml`에서 권한 설정을
-낮추고 bridge sync command를 다시 실행하면 됩니다.
+## 상태 관리 명령
 
-## 개발
-
-로컬 검증:
+자동 run 생성:
 
 ```bash
-python3 tests/smoke_install.py
-python3 -m py_compile core/.phaseharness/bin/*.py tests/smoke_install.py
+python3 .phaseharness/bin/phaseharness-state.py start \
+  --mode auto \
+  --request "<request>" \
+  --loop-count 2 \
+  --commit-mode none \
+  --json
 ```
 
-구현 세부사항은 `SPEC.md`와 `spec/`를 참고하세요.
+상태 확인:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py status --json
+```
+
+다음 continuation prompt 생성:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+```
+
+stage 상태 기록:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py set-stage clarify completed --run-id <run-id>
+```
+
+generate phase 상태 기록:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py set-generate-phase phase-001 completed --run-id <run-id>
+```
+
+commit prompt 처리 결과 기록:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py set-commit phase-001 committed --run-id <run-id>
+python3 .phaseharness/bin/phaseharness-state.py set-commit final no_changes --run-id <run-id> --message "no eligible changes to commit"
+```
+
+## Commit mode
+
+- `none`: commit prompt를 만들지 않습니다.
+- `phase`: generate phase가 하나 끝날 때마다 commit을 요청합니다.
+- `final`: `evaluate`가 `pass` 또는 `warn`이면 마지막에 한 번 commit을 요청합니다.
+
+Commit prompt에는 아래 정보가 포함됩니다.
+
+- run id
+- commit key
+- commit mode
+- commit 가능한 파일
+- run 시작 전부터 변경되어 있어 제외된 파일
+- runtime 파일과 도구 연결 파일 중 기본 제외 대상
+- 반드시 실행해야 하는 `set-commit` 후속 명령
+
+실제 git commit은 `commit`만 수행해야 합니다. commit message는 phase 완료 여부가 아니라 실제 변경 내용을 설명해야 합니다.
+
+## 안전 규칙
+
+Phaseharness는 workflow 제어와 실제 실행을 분리합니다.
+
+- `phaseharness-state.py`는 run 파일과 prompt만 관리합니다.
+- `phaseharness-hook.py`는 Stop hook wrapper입니다.
+- Stop hook은 활성 자동 run이 없으면 동작하지 않습니다.
+- 수동 skill run은 자동으로 이어지지 않습니다.
+- runtime 파일과 도구 연결 파일은 commit prompt에서 제외됩니다.
+- run 시작 시점에 이미 변경되어 있던 파일은 commit prompt에서 제외됩니다.
+
+## Smoke check
+
+설치 후 아래 명령으로 확인합니다.
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py --help
+python3 .phaseharness/bin/phaseharness-hook.py --help
+python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
+python3 -m py_compile .phaseharness/bin/*.py
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+```
+
+활성 run이 없을 때 기대 출력에는 아래 값이 포함됩니다.
+
+```json
+{ "action": "none" }
+```
