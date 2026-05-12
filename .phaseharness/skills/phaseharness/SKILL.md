@@ -31,8 +31,8 @@ python3 .phaseharness/bin/phaseharness-state.py status --json
 4. If an active run exists in this worktree, do not create a new run and do not automatically resume. Ask the user to choose:
 
 - `resume`: bind the existing active run to the current session and continue it.
-- `start-new-in-worktree`: create a new git worktree and branch for a separate phaseharness run.
-- `cancel`: do nothing.
+- `start-new`: pause the existing active run, clear this worktree's active slot, and start the current request as a new run in this same worktree.
+- `start-new-in-worktree`: keep the existing run active here, then create a new git worktree and branch for a separate phaseharness run.
 
 Use this Korean prompt:
 
@@ -40,8 +40,8 @@ Use this Korean prompt:
 이 worktree에 active phaseharness run이 있습니다.
 
 - resume: 기존 run을 현재 세션에 바인딩하고 이어갑니다.
-- start-new-in-worktree: 새 git worktree/branch를 만들고 거기서 별도 run을 시작하게 합니다.
-- cancel: 아무것도 하지 않습니다.
+- start-new: 기존 run을 pause로 주차하고, 지금 요청한 작업을 이 worktree에서 새 run으로 시작합니다.
+- start-new-in-worktree: 기존 run은 그대로 두고, 새 git worktree/branch에서 별도 run을 시작합니다.
 
 어떻게 진행할까요?
 ```
@@ -53,6 +53,14 @@ python3 .phaseharness/bin/phaseharness-state.py resume --json
 ```
 
 Then continue with step 7.
+
+If the user chooses `start-new`, continue to step 5. In step 6, create the new run with:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py start-new --request "<request>" --loop-count <count> --commit-mode <none|phase|final> --json
+```
+
+This command validates the new run, parks the existing active run with `manual_pause`, clears this worktree's active slot, and creates the new active run. It only updates `.phaseharness` run state. It does not clean the working tree, reset files, or clear git staging. If file isolation is needed, use `start-new-in-worktree` instead.
 
 If the user chooses `start-new-in-worktree`, run:
 
@@ -86,7 +94,7 @@ Phaseharness 실행 옵션을 먼저 확인할게요.
 기본값으로 진행할까요? 또는 `loop count 3, commit mode final`처럼 지정해주세요.
 ```
 
-6. Create the run. Auto runs bind to the current provider session. If the runner cannot infer the session id, stop and report the error instead of creating an unbound auto run:
+6. Create the run. Auto runs bind to the current provider session. If the runner cannot infer the session id, stop and report the error instead of creating an unbound auto run. If `start-new` was selected, use the `start-new` command shown above instead of this command:
 
 ```bash
 python3 .phaseharness/bin/phaseharness-state.py start --mode auto --request "<request>" --loop-count <count> --commit-mode <none|phase|final> --json

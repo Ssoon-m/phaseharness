@@ -237,6 +237,12 @@ def bind_state(state: dict[str, Any], provider: str, session_id: str, source: st
     state["session_binding"] = build_binding(provider, session_id, source)
 
 
+def clear_state_binding(state: dict[str, Any]) -> None:
+    state["session_binding"] = None
+    state["provider"] = None
+    state["session_id"] = None
+
+
 def state_binding(state: dict[str, Any]) -> dict[str, Any] | None:
     binding = state.get("session_binding")
     if isinstance(binding, dict) and binding.get("provider") and binding.get("session_id"):
@@ -416,6 +422,44 @@ def clear_active(root: Path) -> None:
             "updated_at": now_iso(),
         },
     )
+
+
+def create_run(
+    root: Path,
+    run_id: str,
+    request: str,
+    mode: str,
+    stage: str,
+    loop_count: int,
+    commit_mode: str,
+    provider: str | None,
+    session_id: str | None,
+) -> dict[str, Any]:
+    target_dir = run_dir(root, run_id)
+    if target_dir.exists():
+        raise RuntimeError(f"run already exists: {run_id}")
+    (target_dir / "artifacts").mkdir(parents=True, exist_ok=True)
+    (target_dir / "phases").mkdir(parents=True, exist_ok=True)
+    state = initial_run(
+        root,
+        run_id,
+        request,
+        mode,
+        stage,
+        loop_count,
+        commit_mode,
+        provider if mode == "auto" else None,
+        session_id if mode == "auto" else None,
+    )
+    save_run(root, state)
+    if mode == "auto":
+        set_active(root, state)
+    return {
+        "run_id": run_id,
+        "run_path": str(run_path(root, run_id).relative_to(root)),
+        "mode": mode,
+        "session_binding": state.get("session_binding"),
+    }
 
 
 def stage_status(state: dict[str, Any], stage: str) -> str:
@@ -891,12 +935,7 @@ def command_start(args: argparse.Namespace) -> int:
         if not provider or not session_id:
             raise RuntimeError("auto run requires a session binding; pass --provider and --session-id if it cannot be inferred")
     run_id = args.run_id or next_run_id(root, args.request)
-    target_dir = run_dir(root, run_id)
-    if target_dir.exists():
-        raise RuntimeError(f"run already exists: {run_id}")
-    (target_dir / "artifacts").mkdir(parents=True, exist_ok=True)
-    (target_dir / "phases").mkdir(parents=True, exist_ok=True)
-    state = initial_run(
+    output = create_run(
         root,
         run_id,
         args.request,
@@ -904,18 +943,9 @@ def command_start(args: argparse.Namespace) -> int:
         stage,
         args.loop_count,
         args.commit_mode,
-        provider if mode == "auto" else None,
-        session_id if mode == "auto" else None,
+        provider,
+        session_id,
     )
-    save_run(root, state)
-    if mode == "auto":
-        set_active(root, state)
-    output = {
-        "run_id": run_id,
-        "run_path": str(run_path(root, run_id).relative_to(root)),
-        "mode": mode,
-        "session_binding": state.get("session_binding"),
-    }
     print(json.dumps(output, ensure_ascii=False) if args.json else run_id)
     return 0
 
@@ -1070,6 +1100,76 @@ def command_resume(args: argparse.Namespace) -> int:
     return 0
 
 
+def park_active_run(root: Path, message: str) -> dict[str, Any]:
+    active = load_json(active_path(root), {"status": "inactive"})
+    run_id = clean_optional(active.get("active_run"))
+    output: dict[str, Any] = {
+        "parked_run_id": run_id,
+        "changed": False,
+        "reason": "",
+    }
+    if active.get("status") not in ("active", "waiting_user") or not run_id:
+        output["reason"] = "no active run"
+    else:
+        state_file = run_path(root, run_id)
+        if not state_file.exists():
+            clear_active(root)
+            output["changed"] = True
+            output["reason"] = "active run file is missing"
+        else:
+            state = load_json(state_file)
+            if state.get("status") in ("completed", "error"):
+                clear_active(root)
+                output["changed"] = True
+                output["reason"] = f"run status is {state.get('status')}"
+            else:
+                set_run_waiting_user(state, "manual_pause", message)
+                clear_state_binding(state)
+                save_run(root, state)
+                clear_active(root)
+                output["changed"] = True
+                output["reason"] = "active run parked"
+    return output
+
+
+def command_park_active(args: argparse.Namespace) -> int:
+    root = find_project_root()
+    ensure_state_files(root)
+    output = park_active_run(root, args.message)
+    if args.json:
+        print(json.dumps(output, indent=2, ensure_ascii=False))
+    else:
+        print(output["reason"])
+    return 0
+
+
+def command_start_new(args: argparse.Namespace) -> int:
+    root = find_project_root()
+    ensure_state_files(root)
+    stage = normalize_stage(args.stage)
+    provider, session_id = identity_from_args(args)
+    if not provider or not session_id:
+        raise RuntimeError("auto run requires a session binding; pass --provider and --session-id if it cannot be inferred")
+    run_id = args.run_id or next_run_id(root, args.request)
+    if run_dir(root, run_id).exists():
+        raise RuntimeError(f"run already exists: {run_id}")
+    parked = park_active_run(root, args.park_message)
+    started = create_run(
+        root,
+        run_id,
+        args.request,
+        "auto",
+        stage,
+        args.loop_count,
+        args.commit_mode,
+        provider,
+        session_id,
+    )
+    output = {"parked": parked, "started": started}
+    print(json.dumps(output, indent=2, ensure_ascii=False) if args.json else run_id)
+    return 0
+
+
 def command_clear_active(args: argparse.Namespace) -> int:
     root = find_project_root()
     ensure_state_files(root)
@@ -1104,6 +1204,17 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--json", action="store_true")
     add_identity_args(start)
     start.set_defaults(func=command_start)
+
+    start_new = sub.add_parser("start-new", help="park the active run and create a new auto run")
+    start_new.add_argument("--request", required=True)
+    start_new.add_argument("--stage", default="clarify")
+    start_new.add_argument("--run-id")
+    start_new.add_argument("--loop-count", type=positive_int, default=1)
+    start_new.add_argument("--commit-mode", choices=COMMIT_MODES, default="none")
+    start_new.add_argument("--park-message", default="manual pause before starting a new phaseharness run")
+    start_new.add_argument("--json", action="store_true")
+    add_identity_args(start_new)
+    start_new.set_defaults(func=command_start_new)
 
     status = sub.add_parser("status", help="print active run status")
     status.add_argument("--json", action="store_true")
@@ -1155,11 +1266,16 @@ def build_parser() -> argparse.ArgumentParser:
     add_identity_args(pause)
     pause.set_defaults(func=command_pause)
 
-    resume = sub.add_parser("resume", help="resume a waiting run")
+    resume = sub.add_parser("resume", help="resume and rebind an active run")
     resume.add_argument("--run-id")
     resume.add_argument("--json", action="store_true")
     add_identity_args(resume)
     resume.set_defaults(func=command_resume)
+
+    park = sub.add_parser("park-active", help="pause the active run and clear the active slot")
+    park.add_argument("--message", default="manual pause before starting a new phaseharness run")
+    park.add_argument("--json", action="store_true")
+    park.set_defaults(func=command_park_active)
 
     clear = sub.add_parser("clear-active", help="deactivate the active run")
     clear.set_defaults(func=command_clear_active)
