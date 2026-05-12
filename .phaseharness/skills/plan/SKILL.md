@@ -33,7 +33,9 @@ If an input is missing, proceed with explicit assumptions when possible and reco
 - Prioritize independent implementation and verification over minimizing phase count.
 - Each phase must be executable by a fresh implementer without conversation memory.
 - Each phase must be reviewable by a fresh reviewer.
-- Specify target files, allowed changes, forbidden changes, acceptance criteria, and validation commands.
+- Specify target files, allowed changes, forbidden changes, acceptance criteria, validation commands, and stop conditions.
+- Include relevant local patterns or contracts the worker should preserve.
+- Do not write complete code in the plan. Capture boundaries, constraints, and verification.
 
 ## Phase Splitting Guidelines
 
@@ -47,10 +49,12 @@ Good reasons to create a separate phase:
 - Different phases have different validation commands or acceptance criteria.
 - One phase can reduce uncertainty for later phases, such as adding a parser, adapter, or test harness before broader behavior changes.
 - File ownership or allowed changes would otherwise become too broad for a fresh implementer to follow safely.
+- A contract change, such as a type, API, schema, prop, or data shape, must be reviewed before downstream behavior changes.
 
 Avoid phase splits that are only mechanical:
 
 - Do not split by file when no file-level change is independently useful or reviewable.
+- Do not split implementation and tests into separate phases when the behavior can be tested in the same phase.
 - Do not create phases that require hidden conversation memory from previous phases.
 - Do not create phases that leave the repository in an incoherent or untestable state unless the phase explicitly documents that limitation and why it is unavoidable.
 
@@ -61,10 +65,12 @@ Each phase should state:
 - what must not be changed
 - how a reviewer can verify the phase without reading chat history
 - whether later phases depend on it
+- exact validation commands and expected outcomes
+- stop conditions when the worker should return `error` instead of guessing
 
 ## Outputs
 
-Write `.phaseharness/runs/<run-id>/artifacts/plan.md` with the phase breakdown and rationale.
+Write `.phaseharness/runs/<run-id>/artifacts/plan.md` with the phase breakdown, rationale, dependency order, and validation strategy.
 
 Create one or more phase files under `.phaseharness/runs/<run-id>/phases/` using `phase-001.md`, `phase-002.md`, and so on.
 
@@ -99,6 +105,8 @@ Create one or more phase files under `.phaseharness/runs/<run-id>/phases/` using
 ## Forbidden Changes
 
 ## Implementation Notes
+- relevant local patterns or contracts:
+- suggested order:
 
 ## Acceptance Criteria
 
@@ -108,6 +116,10 @@ Create one or more phase files under `.phaseharness/runs/<run-id>/phases/` using
 
 - command:
 - expected:
+
+## Stop Conditions
+
+- return `error` instead of guessing if:
 
 ## State Update
 
