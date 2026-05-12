@@ -11,6 +11,7 @@ from typing import Any
 
 
 STAGES = ["clarify", "context_gather", "plan", "generate", "evaluate"]
+USER_WAIT_STAGE = "clarify"
 STAGE_SKILLS = {
     "clarify": "clarify",
     "context_gather": "context-gather",
@@ -26,7 +27,7 @@ ARTIFACTS = {
     "evaluate": "artifacts/evaluate.md",
 }
 COMMIT_MODES = ["none", "phase", "final"]
-COMMIT_TERMINAL_STATUSES = {"committed", "no_changes"}
+COMMIT_TERMINAL_STATUSES = {"committed", "no_changes", "skipped"}
 RUNTIME_SKIP_PREFIXES = [
     ".phaseharness/runs/",
     ".phaseharness/state/",
@@ -183,7 +184,6 @@ def initial_run(root: Path, run_id: str, request: str, mode: str, stage: str, lo
         "mode": mode,
         "activation_source": "phaseharness_skill" if mode == "auto" else "manual_skill",
         "status": "active",
-        "needs_user": False,
         "current_stage": stage,
         "workflow": STAGES,
         "loop": {"current": 1, "max": loop_count},
@@ -213,6 +213,7 @@ def initial_run(root: Path, run_id: str, request: str, mode: str, stage: str, lo
         },
         "evaluation": {"status": "pending"},
         "commits": {},
+        "blocked_by": None,
         "inflight": None,
     }
 
@@ -284,6 +285,41 @@ def clear_active(root: Path) -> None:
 
 def stage_status(state: dict[str, Any], stage: str) -> str:
     return str(state.get("stages", {}).get(stage, {}).get("status", "pending"))
+
+
+def set_run_waiting_user(state: dict[str, Any], kind: str, message: str | None = None, stage: str | None = None) -> None:
+    state["status"] = "waiting_user"
+    blocked_by: dict[str, Any] = {
+        "kind": kind,
+        "message": message or "",
+        "created_at": now_iso(),
+    }
+    if stage:
+        blocked_by["stage"] = stage
+        blocked_by["artifact"] = ARTIFACTS[stage]
+    state["blocked_by"] = blocked_by
+
+
+def clear_run_waiting_user(state: dict[str, Any]) -> None:
+    if state.get("status") == "waiting_user" or state.get("blocked_by"):
+        state["status"] = "active"
+        state["blocked_by"] = None
+
+
+def waiting_user_reason(state: dict[str, Any]) -> str | None:
+    if state.get("status") != "waiting_user":
+        return None
+    blocked_by = state.get("blocked_by")
+    if isinstance(blocked_by, dict):
+        message = str(blocked_by.get("message") or "").strip()
+        if message:
+            return message
+        kind = blocked_by.get("kind")
+        if kind == "clarify_user_decision":
+            return "clarify is waiting for user input"
+        if kind == "manual_pause":
+            return "run is manually paused"
+    return "run is waiting for user input"
 
 
 def set_stage_status(state: dict[str, Any], stage: str, status: str, message: str | None = None) -> None:
@@ -415,7 +451,7 @@ def build_commit_prompt(root: Path, state: dict[str, Any], key: str, mode: str, 
         "```bash\n"
         f"python3 .phaseharness/bin/phaseharness-state.py set-commit {key} committed --run-id {state['run_id']}\n"
         f"python3 .phaseharness/bin/phaseharness-state.py set-commit {key} no_changes --run-id {state['run_id']} --message \"no eligible changes to commit\"\n"
-        f"python3 .phaseharness/bin/phaseharness-state.py set-commit {key} blocked --run-id {state['run_id']} --message \"<question or blocker>\"\n"
+        f"python3 .phaseharness/bin/phaseharness-state.py set-commit {key} skipped --run-id {state['run_id']} --message \"<unsafe or ambiguous commit scope>\"\n"
         f"python3 .phaseharness/bin/phaseharness-state.py set-commit {key} failed --run-id {state['run_id']} --message \"<failure summary>\"\n"
         "```\n\n"
         "Do not use a fixed phase-completion commit message. Inspect `git status` and the eligible diff, then write a meaningful message based on the actual change."
@@ -484,7 +520,6 @@ def start_top_level_stage(root: Path, state: dict[str, Any], stage: str, repromp
         increment_stage_attempt(state, stage)
     set_stage_status(state, stage, "running")
     state["status"] = "active"
-    state["needs_user"] = False
     state["current_stage"] = stage
     state["inflight"] = {
         "stage": stage,
@@ -511,7 +546,6 @@ def start_generate_phase(root: Path, state: dict[str, Any], phase_id: str, repro
     set_stage_status(state, "generate", "running")
     state["current_stage"] = "generate"
     state["status"] = "active"
-    state["needs_user"] = False
     state["inflight"] = {
         "stage": "generate",
         "implementation_phase": phase_id,
@@ -567,7 +601,7 @@ def handle_generate(root: Path, state: dict[str, Any], reprompt_running: bool) -
 
 def finish_run(root: Path, state: dict[str, Any], status: str) -> dict[str, Any]:
     state["status"] = status
-    state["needs_user"] = False
+    state["blocked_by"] = None
     state["inflight"] = None
     state["completed_at" if status == "completed" else "failed_at"] = now_iso()
     save_run(root, state)
@@ -633,7 +667,7 @@ def next_stage(stage: str) -> str | None:
 def compute_next(root: Path, require_auto: bool, reprompt_running: bool) -> dict[str, Any]:
     ensure_state_files(root)
     active = load_json(active_path(root), {"status": "inactive"})
-    if active.get("status") != "active" or not active.get("active_run"):
+    if active.get("status") not in ("active", "waiting_user") or not active.get("active_run"):
         return result_none("no active run")
     if require_auto and (active.get("mode") != "auto" or active.get("activation_source") != "phaseharness_skill"):
         return result_none("active run is not an auto phaseharness run")
@@ -645,9 +679,11 @@ def compute_next(root: Path, require_auto: bool, reprompt_running: bool) -> dict
     state = load_json(state_file)
     if require_auto and (state.get("mode") != "auto" or state.get("activation_source") != "phaseharness_skill"):
         return result_none("run is not auto")
-    if state.get("status") in ("waiting_user", "completed", "error") or state.get("needs_user"):
+    if state.get("status") in ("completed", "error"):
         return result_none(f"run status is {state.get('status')}")
-
+    reason = waiting_user_reason(state)
+    if reason:
+        return result_none(reason)
     stage = first_incomplete_stage(state)
     status = stage_status(state, stage)
 
@@ -699,7 +735,7 @@ def command_start(args: argparse.Namespace) -> int:
     mode = args.mode
     if mode == "auto":
         active = load_json(active_path(root), {"status": "inactive"})
-        if active.get("status") == "active" and active.get("active_run") and not args.force:
+        if active.get("status") in ("active", "waiting_user") and active.get("active_run") and not args.force:
             raise RuntimeError(f"active run already exists: {active.get('active_run')}")
     run_id = args.run_id or next_run_id(root, args.request)
     target_dir = run_dir(root, run_id)
@@ -745,16 +781,17 @@ def command_set_stage(args: argparse.Namespace) -> int:
     state = resolve_run(root, args.run_id)
     stage = normalize_stage(args.stage)
     set_stage_status(state, stage, args.status, args.message)
-    if args.status == "waiting_user":
-        state["status"] = "waiting_user"
-        state["needs_user"] = True
-    elif state.get("status") == "waiting_user":
-        state["status"] = "active"
-        state["needs_user"] = False
+    blocked_by = state.get("blocked_by")
+    if (
+        isinstance(blocked_by, dict)
+        and blocked_by.get("kind") == "clarify_user_decision"
+        and blocked_by.get("stage") == stage
+    ):
+        clear_run_waiting_user(state)
     if args.evaluation_status:
         state["evaluation"] = {"status": args.evaluation_status, "updated_at": now_iso()}
     save_run(root, state)
-    if state.get("mode") == "auto" and state.get("status") == "active":
+    if state.get("mode") == "auto" and state.get("status") in ("active", "waiting_user"):
         set_active(root, state)
     print(json.dumps({"run_id": state["run_id"], "stage": stage, "status": args.status}, ensure_ascii=False))
     return 0
@@ -785,9 +822,6 @@ def command_set_commit(args: argparse.Namespace) -> int:
     item["updated_at"] = now_iso()
     if args.status in COMMIT_TERMINAL_STATUSES:
         item["completed_at"] = now_iso()
-    elif args.status == "blocked":
-        state["status"] = "waiting_user"
-        state["needs_user"] = True
     elif args.status == "failed":
         state["status"] = "error"
     save_run(root, state)
@@ -796,6 +830,50 @@ def command_set_commit(args: argparse.Namespace) -> int:
     elif state.get("mode") == "auto":
         set_active(root, state)
     print(json.dumps({"run_id": state["run_id"], "commit_key": args.key, "status": args.status}, ensure_ascii=False))
+    return 0
+
+
+def command_wait_user(args: argparse.Namespace) -> int:
+    root = find_project_root()
+    state = resolve_run(root, args.run_id)
+    if state.get("status") in ("completed", "error"):
+        raise RuntimeError(f"cannot pause a run with status {state.get('status')}")
+    stage = normalize_stage(args.stage)
+    if stage != USER_WAIT_STAGE:
+        raise RuntimeError("wait-user is only supported for clarify")
+    if state.get("current_stage") != stage:
+        raise RuntimeError("wait-user can only run while clarify is the current stage")
+    if stage_status(state, stage) not in ("pending", "running"):
+        raise RuntimeError("wait-user requires clarify to be pending or running")
+    set_run_waiting_user(state, "clarify_user_decision", args.message, stage=stage)
+    save_run(root, state)
+    if state.get("mode") == "auto":
+        set_active(root, state)
+    print(json.dumps({"run_id": state["run_id"], "status": "waiting_user", "stage": stage}, ensure_ascii=False))
+    return 0
+
+
+def command_pause(args: argparse.Namespace) -> int:
+    root = find_project_root()
+    state = resolve_run(root, args.run_id)
+    if state.get("status") in ("completed", "error"):
+        raise RuntimeError(f"cannot pause a run with status {state.get('status')}")
+    set_run_waiting_user(state, "manual_pause", args.message)
+    save_run(root, state)
+    if state.get("mode") == "auto":
+        set_active(root, state)
+    print(json.dumps({"run_id": state["run_id"], "status": "waiting_user", "kind": "manual_pause"}, ensure_ascii=False))
+    return 0
+
+
+def command_resume(args: argparse.Namespace) -> int:
+    root = find_project_root()
+    state = resolve_run(root, args.run_id)
+    clear_run_waiting_user(state)
+    save_run(root, state)
+    if state.get("mode") == "auto":
+        set_active(root, state)
+    print(json.dumps({"run_id": state["run_id"], "status": state["status"]}, ensure_ascii=False))
     return 0
 
 
@@ -840,7 +918,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_stage = sub.add_parser("set-stage", help="update a top-level stage status")
     set_stage.add_argument("stage")
-    set_stage.add_argument("status", choices=["pending", "running", "waiting_user", "completed", "error"])
+    set_stage.add_argument("status", choices=["pending", "running", "completed", "error"])
     set_stage.add_argument("--run-id")
     set_stage.add_argument("--message")
     set_stage.add_argument("--evaluation-status", choices=["pending", "pass", "warn", "fail"])
@@ -855,10 +933,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     set_commit = sub.add_parser("set-commit", help="record a commit prompt result")
     set_commit.add_argument("key")
-    set_commit.add_argument("status", choices=["committed", "no_changes", "blocked", "failed"])
+    set_commit.add_argument("status", choices=["committed", "no_changes", "skipped", "failed"])
     set_commit.add_argument("--run-id")
     set_commit.add_argument("--message")
     set_commit.set_defaults(func=command_set_commit)
+
+    wait_user = sub.add_parser("wait-user", help="pause a run for a clarify user decision")
+    wait_user.add_argument("--stage", required=True)
+    wait_user.add_argument("--run-id")
+    wait_user.add_argument("--message", required=True)
+    wait_user.set_defaults(func=command_wait_user)
+
+    pause = sub.add_parser("pause", help="manually pause a run")
+    pause.add_argument("--run-id")
+    pause.add_argument("--message", default="manual pause")
+    pause.set_defaults(func=command_pause)
+
+    resume = sub.add_parser("resume", help="resume a waiting run")
+    resume.add_argument("--run-id")
+    resume.set_defaults(func=command_resume)
 
     clear = sub.add_parser("clear-active", help="deactivate the active run")
     clear.set_defaults(func=command_clear_active)

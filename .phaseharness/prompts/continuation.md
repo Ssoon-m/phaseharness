@@ -21,7 +21,9 @@ Reprompt of running stage: `{{REPROMPT}}`
 - Perform only the current stage in this turn. After updating state, stop normally so the Stop hook can request the next continuation prompt.
 - Write or append the required artifact before marking work complete.
 - Update state with `.phaseharness/bin/phaseharness-state.py` before ending. A completed stage must be recorded as `completed`; otherwise the Stop hook will re-enter the same stage.
-- If user input is required, record the question in the artifact, set this stage to `waiting_user`, and stop.
+- If the user explicitly asks to pause or stop the run, run `pause` and stop without advancing the stage.
+- Only `clarify` may wait for missing user input with `wait-user`. If `clarify` requires a user decision, record the question in the artifact, run `wait-user --stage clarify`, and stop.
+- For `context-gather`, `plan`, `generate`, and `evaluate`, do not pause for missing input; record assumptions, risks, or blockers in the artifact and continue the stage to completion or error.
 
 ## Stage Delegation
 

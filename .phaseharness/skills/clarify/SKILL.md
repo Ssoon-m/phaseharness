@@ -28,7 +28,7 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage clar
 - If user input is required, write the question into the artifact and run:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py set-stage clarify waiting_user --run-id <run-id> --message "<question>"
+python3 .phaseharness/bin/phaseharness-state.py wait-user --stage clarify --run-id <run-id> --message "<question>"
 ```
 
 ## Artifact

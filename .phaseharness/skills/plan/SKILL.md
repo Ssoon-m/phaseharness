@@ -25,7 +25,7 @@ Read available artifacts from `.phaseharness/runs/<run-id>/artifacts/`, especial
 - `clarify.md`
 - `context.md`
 
-If an input is missing, either proceed only when the request is still concrete enough, or mark the stage `waiting_user` with the missing decision.
+If an input is missing, proceed with explicit assumptions when possible and record the missing decision as a risk.
 
 ## Rules
 

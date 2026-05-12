@@ -89,6 +89,8 @@ python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-r
 
 - `clarify`, `context-gather`, and `plan` are performed by the main session.
 - `generate` and `evaluate` are controller-led in the main session and delegated to one fresh subagent.
+- An explicit user request to pause or stop the run is handled with `pause` at any stage.
+- Only `clarify` may pause for missing user input with `wait-user`; later stages must proceed with documented assumptions, risks, blockers, or an error state.
 - Subagents do not call state commands, change run lifecycle, or commit.
 - The main session writes artifacts, updates state, and handles commit prompts with `commit`.
 
@@ -98,4 +100,5 @@ python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-r
 - `phase`: after each generated phase completes, the state runner returns a commit prompt.
 - `final`: after evaluate is `pass` or `warn`, the state runner returns a final commit prompt.
 - Commit prompts include run id, commit key, commit mode, eligible paths, skipped baseline paths, runtime/bridge skips, and `set-commit` follow-up commands.
+- Unsafe or ambiguous commit prompts are recorded as `skipped` and do not pause the workflow.
 - The state runner never runs `git commit`.
