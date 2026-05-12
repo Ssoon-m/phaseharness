@@ -10,10 +10,6 @@ venv/
 .env.*
 *.log
 
-.phaseharness/runs/*
-!.phaseharness/runs/.gitkeep
-.phaseharness/state/logs/
-.phaseharness/state/hook.lock
 .claude/
 .codex/
 .agents/skills/

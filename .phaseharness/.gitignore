@@ -1,0 +1,6 @@
+state/*
+!state/.gitkeep
+runs/*
+!runs/.gitkeep
+prompts/.generated/
+*.lock
