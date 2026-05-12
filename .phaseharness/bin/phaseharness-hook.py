@@ -3,9 +3,24 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
+
+
+SESSION_INPUT_KEYS = [
+    "session_id",
+    "sessionId",
+    "thread_id",
+    "threadId",
+    "conversation_id",
+    "conversationId",
+]
+SESSION_ENV_KEYS = {
+    "claude": ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"],
+    "codex": ["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
+}
 
 
 def find_project_root(input_data: dict[str, object]) -> Path | None:
@@ -17,6 +32,25 @@ def find_project_root(input_data: dict[str, object]) -> Path | None:
         if (current / ".phaseharness").is_dir():
             return current
         current = current.parent
+    return None
+
+
+def clean_optional(value: object | None) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def session_id_for(runtime: str, input_data: dict[str, object]) -> str | None:
+    for key in SESSION_INPUT_KEYS:
+        value = clean_optional(input_data.get(key))
+        if value:
+            return value
+    for key in SESSION_ENV_KEYS[runtime]:
+        value = clean_optional(os.environ.get(key))
+        if value:
+            return value
     return None
 
 
@@ -45,6 +79,9 @@ def main() -> int:
         root = find_project_root(input_data)
         if root is None:
             return no_op(args.runtime)
+        session_id = session_id_for(args.runtime, input_data)
+        if not session_id:
+            return no_op(args.runtime)
         runner = root / ".phaseharness" / "bin" / "phaseharness-state.py"
         result = subprocess.run(
             [
@@ -53,6 +90,11 @@ def main() -> int:
                 "next",
                 "--require-auto",
                 "--reprompt-running",
+                "--require-session-binding",
+                "--provider",
+                args.runtime,
+                "--session-id",
+                session_id,
                 "--json",
             ],
             cwd=str(root),

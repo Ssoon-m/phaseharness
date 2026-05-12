@@ -5,5 +5,8 @@
   "mode": null,
   "status": "inactive",
   "provider": null,
-  "session_id": null
+  "session_id": null,
+  "bound_at": null,
+  "bound_source": null,
+  "worktree_root": null
 }

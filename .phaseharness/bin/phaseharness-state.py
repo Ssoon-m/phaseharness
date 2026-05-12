@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
 import subprocess
 from datetime import datetime, timezone
@@ -28,6 +29,11 @@ ARTIFACTS = {
 }
 COMMIT_MODES = ["none", "phase", "final"]
 COMMIT_TERMINAL_STATUSES = {"committed", "no_changes", "skipped"}
+PROVIDERS = ["codex", "claude"]
+SESSION_ENV_KEYS = {
+    "codex": ["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
+    "claude": ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"],
+}
 RUNTIME_SKIP_PREFIXES = [
     ".phaseharness/runs/",
     ".phaseharness/state/",
@@ -110,6 +116,9 @@ def ensure_state_files(root: Path) -> None:
             "status": "inactive",
             "provider": None,
             "session_id": None,
+            "bound_at": None,
+            "bound_source": None,
+            "worktree_root": None,
             "updated_at": now_iso(),
         },
     )
@@ -128,6 +137,11 @@ def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
 
 def git_head(root: Path) -> str:
     result = git(root, "rev-parse", "HEAD")
+    return result.stdout.strip() if result.returncode == 0 else ""
+
+
+def git_branch(root: Path) -> str:
+    result = git(root, "branch", "--show-current")
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
@@ -176,7 +190,112 @@ def next_run_id(root: Path, request: str) -> str:
     return candidate
 
 
-def initial_run(root: Path, run_id: str, request: str, mode: str, stage: str, loop_count: int, commit_mode: str) -> dict[str, Any]:
+def clean_optional(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
+def infer_provider(explicit: str | None = None) -> str | None:
+    if explicit:
+        return explicit
+    for provider, keys in SESSION_ENV_KEYS.items():
+        if any(clean_optional(os.environ.get(key)) for key in keys):
+            return provider
+    return None
+
+
+def infer_session_id(provider: str | None, explicit: str | None = None) -> str | None:
+    if explicit:
+        return explicit
+    providers = [provider] if provider in SESSION_ENV_KEYS else list(SESSION_ENV_KEYS)
+    for item in providers:
+        for key in SESSION_ENV_KEYS[item]:
+            value = clean_optional(os.environ.get(key))
+            if value:
+                return value
+    return None
+
+
+def identity_from_args(args: argparse.Namespace) -> tuple[str | None, str | None]:
+    provider = infer_provider(getattr(args, "provider", None))
+    session_id = infer_session_id(provider, clean_optional(getattr(args, "session_id", None)))
+    return provider, session_id
+
+
+def build_binding(provider: str, session_id: str, source: str) -> dict[str, Any]:
+    return {
+        "provider": provider,
+        "session_id": session_id,
+        "bound_at": now_iso(),
+        "bound_source": source,
+    }
+
+
+def bind_state(state: dict[str, Any], provider: str, session_id: str, source: str) -> None:
+    state["session_binding"] = build_binding(provider, session_id, source)
+
+
+def state_binding(state: dict[str, Any]) -> dict[str, Any] | None:
+    binding = state.get("session_binding")
+    if isinstance(binding, dict) and binding.get("provider") and binding.get("session_id"):
+        return binding
+    provider = clean_optional(state.get("provider"))
+    session_id = clean_optional(state.get("session_id"))
+    if provider and session_id:
+        return {"provider": provider, "session_id": session_id}
+    return None
+
+
+def active_binding(active: dict[str, Any]) -> dict[str, Any] | None:
+    provider = clean_optional(active.get("provider"))
+    session_id = clean_optional(active.get("session_id"))
+    if provider and session_id:
+        return {
+            "provider": provider,
+            "session_id": session_id,
+            "bound_at": active.get("bound_at"),
+            "bound_source": active.get("bound_source"),
+        }
+    return None
+
+
+def binding_error(
+    binding: dict[str, Any] | None,
+    provider: str | None,
+    session_id: str | None,
+    require: bool,
+) -> str | None:
+    if not require and not (provider or session_id):
+        return None
+    if not provider or not session_id:
+        return "session id unavailable"
+    if not binding:
+        return "active run has no session binding"
+    if binding.get("provider") != provider or binding.get("session_id") != session_id:
+        return "active run is bound to another session"
+    return None
+
+
+def ensure_update_allowed(state: dict[str, Any], provider: str | None, session_id: str | None) -> None:
+    error = binding_error(state_binding(state), provider, session_id, require=False)
+    if error:
+        raise RuntimeError(error)
+
+
+def initial_run(
+    root: Path,
+    run_id: str,
+    request: str,
+    mode: str,
+    stage: str,
+    loop_count: int,
+    commit_mode: str,
+    provider: str | None = None,
+    session_id: str | None = None,
+) -> dict[str, Any]:
+    binding = build_binding(provider, session_id, "start") if provider and session_id else None
     return {
         "schema_version": 1,
         "run_id": run_id,
@@ -188,6 +307,11 @@ def initial_run(root: Path, run_id: str, request: str, mode: str, stage: str, lo
         "workflow": STAGES,
         "loop": {"current": 1, "max": loop_count},
         "commit_mode": commit_mode,
+        "session_binding": binding,
+        "worktree": {
+            "root": str(root),
+            "branch": git_branch(root),
+        },
         "created_at": now_iso(),
         "updated_at": now_iso(),
         "git_baseline": {
@@ -227,6 +351,7 @@ def update_index(root: Path, state: dict[str, Any]) -> None:
         if isinstance(item, dict) and item.get("run_id") == state.get("run_id"):
             existing = item
             break
+    binding = state_binding(state) or {}
     record = {
         "run_id": state.get("run_id"),
         "request": state.get("request"),
@@ -235,6 +360,9 @@ def update_index(root: Path, state: dict[str, Any]) -> None:
         "current_stage": state.get("current_stage"),
         "loop_count": state.get("loop", {}).get("max"),
         "commit_mode": state.get("commit_mode"),
+        "provider": binding.get("provider"),
+        "session_id": binding.get("session_id"),
+        "worktree_root": str(root),
         "created_at": state.get("created_at"),
         "updated_at": now_iso(),
     }
@@ -252,6 +380,7 @@ def save_run(root: Path, state: dict[str, Any]) -> None:
 
 
 def set_active(root: Path, state: dict[str, Any]) -> None:
+    binding = state_binding(state) or {}
     save_json(
         active_path(root),
         {
@@ -260,8 +389,11 @@ def set_active(root: Path, state: dict[str, Any]) -> None:
             "activation_source": state.get("activation_source"),
             "mode": state.get("mode"),
             "status": state.get("status"),
-            "provider": None,
-            "session_id": None,
+            "provider": binding.get("provider"),
+            "session_id": binding.get("session_id"),
+            "bound_at": binding.get("bound_at"),
+            "bound_source": binding.get("bound_source"),
+            "worktree_root": None,
             "updated_at": now_iso(),
         },
     )
@@ -278,6 +410,9 @@ def clear_active(root: Path) -> None:
             "status": "inactive",
             "provider": None,
             "session_id": None,
+            "bound_at": None,
+            "bound_source": None,
+            "worktree_root": str(root),
             "updated_at": now_iso(),
         },
     )
@@ -664,7 +799,14 @@ def next_stage(stage: str) -> str | None:
     return STAGES[index + 1]
 
 
-def compute_next(root: Path, require_auto: bool, reprompt_running: bool) -> dict[str, Any]:
+def compute_next(
+    root: Path,
+    require_auto: bool,
+    reprompt_running: bool,
+    provider: str | None = None,
+    session_id: str | None = None,
+    require_session_binding: bool = False,
+) -> dict[str, Any]:
     ensure_state_files(root)
     active = load_json(active_path(root), {"status": "inactive"})
     if active.get("status") not in ("active", "waiting_user") or not active.get("active_run"):
@@ -679,6 +821,14 @@ def compute_next(root: Path, require_auto: bool, reprompt_running: bool) -> dict
     state = load_json(state_file)
     if require_auto and (state.get("mode") != "auto" or state.get("activation_source") != "phaseharness_skill"):
         return result_none("run is not auto")
+    error = binding_error(
+        active_binding(active) or state_binding(state),
+        provider,
+        session_id,
+        require=require_session_binding,
+    )
+    if error:
+        return result_none(error)
     if state.get("status") in ("completed", "error"):
         return result_none(f"run status is {state.get('status')}")
     reason = waiting_user_reason(state)
@@ -733,21 +883,39 @@ def command_start(args: argparse.Namespace) -> int:
     ensure_state_files(root)
     stage = normalize_stage(args.stage)
     mode = args.mode
+    provider, session_id = identity_from_args(args)
     if mode == "auto":
         active = load_json(active_path(root), {"status": "inactive"})
         if active.get("status") in ("active", "waiting_user") and active.get("active_run") and not args.force:
             raise RuntimeError(f"active run already exists: {active.get('active_run')}")
+        if not provider or not session_id:
+            raise RuntimeError("auto run requires a session binding; pass --provider and --session-id if it cannot be inferred")
     run_id = args.run_id or next_run_id(root, args.request)
     target_dir = run_dir(root, run_id)
     if target_dir.exists():
         raise RuntimeError(f"run already exists: {run_id}")
     (target_dir / "artifacts").mkdir(parents=True, exist_ok=True)
     (target_dir / "phases").mkdir(parents=True, exist_ok=True)
-    state = initial_run(root, run_id, args.request, mode, stage, args.loop_count, args.commit_mode)
+    state = initial_run(
+        root,
+        run_id,
+        args.request,
+        mode,
+        stage,
+        args.loop_count,
+        args.commit_mode,
+        provider if mode == "auto" else None,
+        session_id if mode == "auto" else None,
+    )
     save_run(root, state)
     if mode == "auto":
         set_active(root, state)
-    output = {"run_id": run_id, "run_path": str(run_path(root, run_id).relative_to(root)), "mode": mode}
+    output = {
+        "run_id": run_id,
+        "run_path": str(run_path(root, run_id).relative_to(root)),
+        "mode": mode,
+        "session_binding": state.get("session_binding"),
+    }
     print(json.dumps(output, ensure_ascii=False) if args.json else run_id)
     return 0
 
@@ -768,7 +936,15 @@ def command_status(args: argparse.Namespace) -> int:
 
 def command_next(args: argparse.Namespace) -> int:
     root = find_project_root()
-    result = compute_next(root, require_auto=args.require_auto, reprompt_running=args.reprompt_running)
+    provider, session_id = identity_from_args(args)
+    result = compute_next(
+        root,
+        require_auto=args.require_auto,
+        reprompt_running=args.reprompt_running,
+        provider=provider,
+        session_id=session_id,
+        require_session_binding=args.require_session_binding,
+    )
     if args.json:
         print(json.dumps(result, indent=2, ensure_ascii=False))
     elif result.get("action") == "prompt":
@@ -779,6 +955,8 @@ def command_next(args: argparse.Namespace) -> int:
 def command_set_stage(args: argparse.Namespace) -> int:
     root = find_project_root()
     state = resolve_run(root, args.run_id)
+    provider, session_id = identity_from_args(args)
+    ensure_update_allowed(state, provider, session_id)
     stage = normalize_stage(args.stage)
     set_stage_status(state, stage, args.status, args.message)
     blocked_by = state.get("blocked_by")
@@ -800,6 +978,8 @@ def command_set_stage(args: argparse.Namespace) -> int:
 def command_set_generate_phase(args: argparse.Namespace) -> int:
     root = find_project_root()
     state = resolve_run(root, args.run_id)
+    provider, session_id = identity_from_args(args)
+    ensure_update_allowed(state, provider, session_id)
     set_generate_phase_status(state, args.phase_id, args.status, args.message)
     if args.status in ("pending", "running"):
         state.setdefault("generate", {})["current_phase"] = args.phase_id
@@ -815,6 +995,8 @@ def command_set_generate_phase(args: argparse.Namespace) -> int:
 def command_set_commit(args: argparse.Namespace) -> int:
     root = find_project_root()
     state = resolve_run(root, args.run_id)
+    provider, session_id = identity_from_args(args)
+    ensure_update_allowed(state, provider, session_id)
     commits = state.setdefault("commits", {})
     item = commits.setdefault(args.key, {})
     item["status"] = args.status
@@ -836,6 +1018,8 @@ def command_set_commit(args: argparse.Namespace) -> int:
 def command_wait_user(args: argparse.Namespace) -> int:
     root = find_project_root()
     state = resolve_run(root, args.run_id)
+    provider, session_id = identity_from_args(args)
+    ensure_update_allowed(state, provider, session_id)
     if state.get("status") in ("completed", "error"):
         raise RuntimeError(f"cannot pause a run with status {state.get('status')}")
     stage = normalize_stage(args.stage)
@@ -856,6 +1040,8 @@ def command_wait_user(args: argparse.Namespace) -> int:
 def command_pause(args: argparse.Namespace) -> int:
     root = find_project_root()
     state = resolve_run(root, args.run_id)
+    provider, session_id = identity_from_args(args)
+    ensure_update_allowed(state, provider, session_id)
     if state.get("status") in ("completed", "error"):
         raise RuntimeError(f"cannot pause a run with status {state.get('status')}")
     set_run_waiting_user(state, "manual_pause", args.message)
@@ -869,9 +1055,16 @@ def command_pause(args: argparse.Namespace) -> int:
 def command_resume(args: argparse.Namespace) -> int:
     root = find_project_root()
     state = resolve_run(root, args.run_id)
+    if state.get("status") in ("completed", "error"):
+        raise RuntimeError(f"cannot resume a run with status {state.get('status')}")
+    provider, session_id = identity_from_args(args)
+    if state.get("mode") == "auto":
+        if not provider or not session_id:
+            raise RuntimeError("resume requires a session binding; pass --provider and --session-id if it cannot be inferred")
+        bind_state(state, provider, session_id, "resume")
     clear_run_waiting_user(state)
     save_run(root, state)
-    if state.get("mode") == "auto":
+    if state.get("mode") == "auto" and state.get("status") in ("active", "waiting_user"):
         set_active(root, state)
     print(json.dumps({"run_id": state["run_id"], "status": state["status"]}, ensure_ascii=False))
     return 0
@@ -891,6 +1084,11 @@ def positive_int(value: str) -> int:
     return parsed
 
 
+def add_identity_args(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument("--provider", choices=PROVIDERS)
+    parser.add_argument("--session-id")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Phaseharness file-state runner.")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -904,6 +1102,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--commit-mode", choices=COMMIT_MODES, default="none")
     start.add_argument("--force", action="store_true")
     start.add_argument("--json", action="store_true")
+    add_identity_args(start)
     start.set_defaults(func=command_start)
 
     status = sub.add_parser("status", help="print active run status")
@@ -913,7 +1112,9 @@ def build_parser() -> argparse.ArgumentParser:
     next_cmd = sub.add_parser("next", help="print the next continuation prompt")
     next_cmd.add_argument("--require-auto", action="store_true")
     next_cmd.add_argument("--reprompt-running", action="store_true")
+    next_cmd.add_argument("--require-session-binding", action="store_true")
     next_cmd.add_argument("--json", action="store_true")
+    add_identity_args(next_cmd)
     next_cmd.set_defaults(func=command_next)
 
     set_stage = sub.add_parser("set-stage", help="update a top-level stage status")
@@ -922,6 +1123,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_stage.add_argument("--run-id")
     set_stage.add_argument("--message")
     set_stage.add_argument("--evaluation-status", choices=["pending", "pass", "warn", "fail"])
+    add_identity_args(set_stage)
     set_stage.set_defaults(func=command_set_stage)
 
     set_generate = sub.add_parser("set-generate-phase", help="update a generated phase status")
@@ -929,6 +1131,7 @@ def build_parser() -> argparse.ArgumentParser:
     set_generate.add_argument("status", choices=["pending", "running", "completed", "error", "failed"])
     set_generate.add_argument("--run-id")
     set_generate.add_argument("--message")
+    add_identity_args(set_generate)
     set_generate.set_defaults(func=command_set_generate_phase)
 
     set_commit = sub.add_parser("set-commit", help="record a commit prompt result")
@@ -936,21 +1139,26 @@ def build_parser() -> argparse.ArgumentParser:
     set_commit.add_argument("status", choices=["committed", "no_changes", "skipped", "failed"])
     set_commit.add_argument("--run-id")
     set_commit.add_argument("--message")
+    add_identity_args(set_commit)
     set_commit.set_defaults(func=command_set_commit)
 
     wait_user = sub.add_parser("wait-user", help="pause a run for a clarify user decision")
     wait_user.add_argument("--stage", required=True)
     wait_user.add_argument("--run-id")
     wait_user.add_argument("--message", required=True)
+    add_identity_args(wait_user)
     wait_user.set_defaults(func=command_wait_user)
 
     pause = sub.add_parser("pause", help="manually pause a run")
     pause.add_argument("--run-id")
     pause.add_argument("--message", default="manual pause")
+    add_identity_args(pause)
     pause.set_defaults(func=command_pause)
 
     resume = sub.add_parser("resume", help="resume a waiting run")
     resume.add_argument("--run-id")
+    resume.add_argument("--json", action="store_true")
+    add_identity_args(resume)
     resume.set_defaults(func=command_resume)
 
     clear = sub.add_parser("clear-active", help="deactivate the active run")

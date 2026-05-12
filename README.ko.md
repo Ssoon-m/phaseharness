@@ -45,7 +45,13 @@ agent에게 workflow skill 사용을 요청합니다.
 Use `phaseharness` to implement <task>.
 ```
 
-run을 만들기 전에 `phaseharness`는 아래 옵션을 확인합니다.
+run을 만들기 전에 `phaseharness`는 먼저 현재 worktree에 active run이 있는지 확인합니다. active run이 있으면 아래 중 하나를 선택하게 합니다.
+
+- `resume`: 기존 active run을 현재 session에 바인딩하고 이어갑니다.
+- `start-new-in-worktree`: 새 git worktree와 branch를 만들고 별도 run을 시작하게 합니다.
+- `cancel`: 아무것도 하지 않습니다.
+
+active run이 없으면 `phaseharness`는 아래 옵션을 확인합니다.
 
 - `loop count`: `generate -> evaluate` cycle 최대 횟수
 - `commit mode`: `none`, `phase`, `final` 중 하나
@@ -57,7 +63,23 @@ loop count: 2
 commit mode: none
 ```
 
-확인이 끝나면 `phaseharness`가 run을 만들고, run 파일 기준으로 첫 단계를 시작합니다.
+확인이 끝나면 `phaseharness`가 run을 만들고, 현재 provider session에 바인딩한 뒤 run 파일 기준으로 첫 단계를 시작합니다.
+
+## 병렬 run
+
+하나의 worktree에는 active phaseharness run을 하나만 둡니다. 병렬 phaseharness 작업은 같은 working tree에 여러 active run을 두는 방식이 아니라 git worktree로 분리합니다.
+
+```bash
+python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
+```
+
+기본 naming 규칙은 아래와 같습니다.
+
+- run/worktree name: `YYYYMMDD-HHMMSS-<task-slug>`
+- branch: `phaseharness/<name>`
+- path: `<repo-parent>/<repo-name>.worktrees/<name>`
+
+새 run은 새 worktree에서 새 Codex/Claude session을 열고 시작하며, run을 만들 때 반환된 `run_id`를 사용합니다.
 
 ## 수동 skill
 
@@ -94,10 +116,12 @@ phase를 나누는 기준은 아래와 같습니다.
 Stop hook이 호출하는 명령은 아래 하나뿐입니다.
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 Stop hook은 모델을 실행하지 않고, subagent를 만들지 않고, 파일을 수정하지 않고, 평가하지 않고, commit하지 않습니다. 상태 관리 스크립트에게 다음 prompt를 요청하고 그 prompt를 현재 session에 전달할 뿐입니다.
+
+hook input의 session id가 없거나, run binding이 없거나, hook session id가 run에 바인딩된 session id와 다르면 Stop hook은 no-op 합니다.
 
 어떤 단계가 `running` 상태로 남아 있으면 `--reprompt-running`은 새 작업을 시작하지 않고 같은 단계로 다시 들어가는 prompt를 반환합니다.
 
@@ -168,7 +192,19 @@ python3 .phaseharness/bin/phaseharness-state.py status --json
 다음 continuation prompt 생성:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
+```
+
+active run을 현재 session에 다시 바인딩하고 resume:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py resume --json
+```
+
+병렬 작업용 worktree 생성:
+
+```bash
+python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
 ```
 
 stage 상태 기록:
@@ -214,8 +250,9 @@ Phaseharness는 workflow 제어와 실제 실행을 분리합니다.
 
 - `phaseharness-state.py`는 run 파일과 prompt만 관리합니다.
 - `phaseharness-hook.py`는 Stop hook wrapper입니다.
-- Stop hook은 활성 자동 run이 없으면 동작하지 않습니다.
+- Stop hook은 현재 session id에 바인딩된 활성 자동 run이 있을 때만 동작합니다.
 - 수동 skill run은 자동으로 이어지지 않습니다.
+- 병렬 자동 run은 별도 git worktree에서 실행합니다.
 - runtime 파일과 도구 연결 파일은 commit prompt에서 제외됩니다.
 - run 시작 시점에 이미 변경되어 있던 파일은 commit prompt에서 제외됩니다.
 
@@ -227,8 +264,9 @@ Phaseharness는 workflow 제어와 실제 실행을 분리합니다.
 python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
+python3 .phaseharness/bin/phaseharness-worktree.py --help
 python3 -m py_compile .phaseharness/bin/*.py
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 활성 run이 없을 때 기대 출력에는 아래 값이 포함됩니다.

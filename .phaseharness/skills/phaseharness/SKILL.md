@@ -28,7 +28,41 @@ python3 .phaseharness/bin/phaseharness-sync-bridges.py
 python3 .phaseharness/bin/phaseharness-state.py status --json
 ```
 
-4. Before creating a new auto run, ask for:
+4. If an active run exists in this worktree, do not create a new run and do not automatically resume. Ask the user to choose:
+
+- `resume`: bind the existing active run to the current session and continue it.
+- `start-new-in-worktree`: create a new git worktree and branch for a separate phaseharness run.
+- `cancel`: do nothing.
+
+Use this Korean prompt:
+
+```text
+이 worktree에 active phaseharness run이 있습니다.
+
+- resume: 기존 run을 현재 세션에 바인딩하고 이어갑니다.
+- start-new-in-worktree: 새 git worktree/branch를 만들고 거기서 별도 run을 시작하게 합니다.
+- cancel: 아무것도 하지 않습니다.
+
+어떻게 진행할까요?
+```
+
+If the user chooses `resume`, run:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py resume --json
+```
+
+Then continue with step 7.
+
+If the user chooses `start-new-in-worktree`, run:
+
+```bash
+python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
+```
+
+Tell the user the worktree path, branch, and run id. Tell them to start a new Codex/Claude session in that worktree and use the returned run id with `phaseharness-state.py start --run-id <run-id>` when the run is created. Do not bind a second run to the current session.
+
+5. Before creating a new auto run, ask for:
 
 - loop count: maximum number of `generate -> evaluate` cycles
 - commit mode: `none`, `phase`, or `final`
@@ -52,16 +86,16 @@ Phaseharness 실행 옵션을 먼저 확인할게요.
 기본값으로 진행할까요? 또는 `loop count 3, commit mode final`처럼 지정해주세요.
 ```
 
-5. Create the run:
+6. Create the run. Auto runs bind to the current provider session. If the runner cannot infer the session id, stop and report the error instead of creating an unbound auto run:
 
 ```bash
 python3 .phaseharness/bin/phaseharness-state.py start --mode auto --request "<request>" --loop-count <count> --commit-mode <none|phase|final> --json
 ```
 
-6. Get and execute the first continuation prompt:
+7. Get and execute the first continuation prompt:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 If the result action is `prompt`, execute that prompt in the main session. Do not wait for the Stop hook when starting inside the current turn.
@@ -72,11 +106,21 @@ If the result action is `prompt`, execute that prompt in the main session. Do no
 - Stop hooks call only:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 - Stop hooks do not run LLMs, subagents, product code edits, evaluation, or git commits.
+- Stop hooks continue only when the hook session id matches the run's bound session id. Missing session id or missing binding is a no-op.
 - If a stage remains `running`, `next --reprompt-running` returns a re-entry prompt for the same stage instead of starting a duplicate stage.
+
+## Parallel Worktrees
+
+- One worktree has at most one active phaseharness run.
+- Parallel phaseharness work must use `phaseharness-worktree.py create`, which creates:
+  - run/worktree name: `YYYYMMDD-HHMMSS-<task-slug>`
+  - branch: `phaseharness/<name>`
+  - path: `<repo-parent>/<repo-name>.worktrees/<name>`
+- Start the new run from a new session whose cwd is the new worktree.
 
 ## Manual Skills
 

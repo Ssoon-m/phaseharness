@@ -45,7 +45,13 @@ Ask the agent to use the workflow skill:
 Use `phaseharness` to implement <task>.
 ```
 
-Before creating a run, `phaseharness` checks these options:
+Before creating a run, `phaseharness` first checks whether this worktree already has an active run. If it does, it asks you to choose:
+
+- `resume`: bind the existing active run to the current session and continue it
+- `start-new-in-worktree`: create a new git worktree and branch for a separate run
+- `cancel`: do nothing
+
+If no active run exists, `phaseharness` checks these options:
 
 - `loop count`: maximum number of `generate -> evaluate` cycles
 - `commit mode`: one of `none`, `phase`, `final`
@@ -57,7 +63,23 @@ loop count: 2
 commit mode: none
 ```
 
-After confirmation, `phaseharness` creates a run and starts the first stage from the run files.
+After confirmation, `phaseharness` creates a run, binds it to the current provider session, and starts the first stage from the run files.
+
+## Parallel Runs
+
+One worktree has at most one active phaseharness run. Parallel phaseharness work uses git worktrees, not multiple active runs in the same working tree.
+
+```bash
+python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
+```
+
+The default naming is:
+
+- run/worktree name: `YYYYMMDD-HHMMSS-<task-slug>`
+- branch: `phaseharness/<name>`
+- path: `<repo-parent>/<repo-name>.worktrees/<name>`
+
+Start a new Codex/Claude session in the new worktree before starting the new run, and use the returned `run_id` when creating that run.
 
 ## Manual Skills
 
@@ -94,10 +116,12 @@ Only `phaseharness` creates automatic runs. The Stop hook can continue only auto
 The Stop hook calls only this command:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 The Stop hook does not run a model, create a subagent, edit files, evaluate, or commit. It only asks the state management script for the next prompt and passes that prompt to the current session.
+
+The Stop hook is a no-op if the hook session id is missing, the run has no binding, or the hook session id does not match the run's bound session id.
 
 If a stage remains `running`, `--reprompt-running` returns a prompt to re-enter the same stage instead of starting new work.
 
@@ -168,7 +192,19 @@ python3 .phaseharness/bin/phaseharness-state.py status --json
 Create the next continuation prompt:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
+```
+
+Resume and rebind an active run to the current session:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py resume --json
+```
+
+Create a parallel worktree:
+
+```bash
+python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
 ```
 
 Record a stage status:
@@ -214,8 +250,9 @@ Phaseharness separates workflow control from execution.
 
 - `phaseharness-state.py` only manages run files and prompts.
 - `phaseharness-hook.py` is a Stop hook wrapper.
-- Stop hooks do nothing unless an automatic run is active.
+- Stop hooks do nothing unless an automatic run is active and bound to the current session id.
 - Manual skill runs do not continue automatically.
+- Parallel automatic runs use separate git worktrees.
 - Runtime files and tool connection files are excluded from commit prompts.
 - Files that were already changed when a run started are excluded from commit prompts.
 
@@ -227,8 +264,9 @@ After installation, verify with:
 python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
+python3 .phaseharness/bin/phaseharness-worktree.py --help
 python3 -m py_compile .phaseharness/bin/*.py
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 When no run is active, the expected output includes:

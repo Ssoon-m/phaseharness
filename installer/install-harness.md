@@ -39,6 +39,7 @@ test -d "$HARNESS_SOURCE/.phaseharness"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-state.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-hook.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-sync-bridges.py"
+test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-worktree.py"
 test -f "$HARNESS_SOURCE/.phaseharness/skills/phaseharness/SKILL.md"
 test -f "$HARNESS_SOURCE/.phaseharness/skills/commit/SKILL.md"
 ```
@@ -74,6 +75,7 @@ This creates or updates:
 - `.codex/hooks.json` phaseharness `SessionStart` and `Stop` hook entries
 - `.claude/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
 - `.agents/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
+- `.phaseharness/bin/phaseharness-worktree.py` for parallel worktree creation
 - `.phaseharness/state/active.json`
 - `.phaseharness/state/index.json`
 
@@ -84,10 +86,10 @@ Subagents are not predeclared. The `generate` and `evaluate` skills create fresh
 The installed Stop hook is inert for normal questions. It only calls:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
-The hook may continue work only when `.phaseharness/state/active.json` points to an active auto run created by `phaseharness`.
+The hook may continue work only when `.phaseharness/state/active.json` points to an active auto run created by `phaseharness` and the hook session id matches the run binding.
 
 ## Smoke Verification
 
@@ -95,8 +97,9 @@ The hook may continue work only when `.phaseharness/state/active.json` points to
 python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
+python3 .phaseharness/bin/phaseharness-worktree.py --help
 python3 -m py_compile .phaseharness/bin/*.py
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```
 
 When no automatic run is active, the output should include `"action": "none"`.

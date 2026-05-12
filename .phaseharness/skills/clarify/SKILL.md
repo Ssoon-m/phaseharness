@@ -17,7 +17,7 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage clar
 ```
 
 - Manual runs perform only this stage. Do not call `next`.
-- Auto runs are continued only by the Stop hook through `next --require-auto --reprompt-running --json`.
+- Auto runs are continued only by the Stop hook through `next --require-auto --reprompt-running --require-session-binding --json`.
 
 ## Rules
 

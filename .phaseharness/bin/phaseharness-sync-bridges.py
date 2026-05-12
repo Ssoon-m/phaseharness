@@ -201,6 +201,9 @@ def ensure_state_files(root: Path) -> list[Path]:
                 "status": "inactive",
                 "provider": None,
                 "session_id": None,
+                "bound_at": None,
+                "bound_source": None,
+                "worktree_root": None,
             },
         )
         changed.append(active)
