@@ -166,12 +166,12 @@ def copy_skill(root: Path, skill_name: str, target: Path) -> Path:
         if target.resolve() == source.resolve():
             target.unlink()
         else:
-            return target
+            raise RuntimeError(f"skill target is a symlink to another path: {target}")
     if target.exists():
         if target.is_dir():
             shutil.copytree(source, target, dirs_exist_ok=True)
             return target
-        return target
+        raise RuntimeError(f"skill target exists and is not a directory: {target}")
     shutil.copytree(source, target)
     return target
 
