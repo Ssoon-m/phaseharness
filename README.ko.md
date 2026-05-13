@@ -1,84 +1,61 @@
 # Phaseharness
 
-Phaseharness는 큰 AI 코딩 작업을 파일 기반 단계로 나누어 진행하는 workflow 시스템입니다.
+Phaseharness는 AI 코딩 에이전트가 작업을 단계적으로 처리하도록 돕는 하네스 시스템입니다.
 
-phaseharness 스킬 사용시 작업은 아래 순서로 진행됩니다.
+모든 프로젝트에 맞는 범용 하네스를 제공하기보다, 프로젝트마다 다른 지침과 작업 방식에 맞는
+맞춤형 하네스를 구축하는 데 초점을 둡니다.
+
+사용자는 아키텍처 문서, 코딩 규칙, 리뷰 기준, 팀의 암묵지 등을 Phaseharness에 연결할 수 있습니다.
+이를 통해 에이전트가 프로젝트 맥락을 적극적으로 반영해 계획, 구현, 검토를 진행하도록 만듭니다.
+
+`context-gather` 단계는 작업에 참고한 문서와 읽은 내용을
+`.phaseharness/runs/*/artifacts/context.md`에 기록합니다.
+따라서 어떤 근거로 계획이 세워졌는지 확인할 수 있습니다.
+
+`phaseharness`를 반복해서 사용할수록 원하는 결과가 나오지 않았을 때 어떤 지침이 부족했는지 드러납니다.
+그 과정에서 프로젝트 문서를 점진적으로 개선하는 흐름도 자연스럽게 만들어집니다.
+
+## 진행 방식
+
+Phaseharness는 에이전트가 아래 순서로 작업하도록 강제합니다.
 
 ```text
-clarify -> context_gather -> plan -> generate -> evaluate
+clarify -> context-gather -> plan -> generate -> evaluate
 ```
 
-대화 기록에 의존하지 않고, 각 작업의 진행 기록을 파일로 남깁니다.
+- `clarify`: 목표, 범위, 성공 기준, 필요한 결정을 정리합니다.
+- `context-gather`: 관련 코드와 프로젝트 지침을 확인합니다.
+- `plan`: 구현과 검토가 쉬운 단계로 작업을 나눕니다.
+- `generate`: 계획된 단계를 구현합니다.
+- `evaluate`: 최종 diff가 처음 요청과 기준을 만족하는지 검토합니다.
 
-```text
-.phaseharness/runs/<run-id>/
-```
+진행 중에도 평소처럼 에이전트에게 말하면 됩니다. 요구사항이 바뀌면 바뀐 내용을 알려주세요.
+멈추고 싶으면 pause 또는 stop하라고 말하면 됩니다.
 
-이 구조로 인해 긴 작업을 중간에 멈췄다가 다시 이어가거나, 현재 상태를 검토하거나, 중복 실행을 피하기 쉽습니다.
+## 설치
 
-## 무엇을 하는가
-
-Phaseharness는 작업을 아래처럼 나눕니다.
-
-- 요구사항을 명확히 정리합니다.
-- 저장소 구조와 관련 파일을 조사합니다.
-- 독립적으로 구현 가능한 phase 파일을 만듭니다.
-- phase 하나씩 구현합니다.
-- 현재 diff가 합의한 기준을 만족하는지 평가합니다.
-
-Python 상태 관리 스크립트는 상태 파일을 읽고 쓰며 다음 prompt를 출력할 뿐입니다. 모델을 실행하거나, subagent를 만들거나, 실제 코드를 수정하거나, 결과를 평가하거나, `git commit`을 실행하지 않습니다.
-
-## phaseharness 시작하기
-
-Phaseharness를 설치할 저장소에서 사용 중인 agent를 실행시켜 아래 문장을 입력하세요.
+Phaseharness를 사용할 저장소에서 Codex 또는 Claude를 열고 아래 문장을 붙여 넣으세요.
 
 ```text
 Install phaseharness from this installer document:
 https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 ```
 
-설치 후에는 `phaseharness` skill로 workflow를 시작합니다.
-
-```text
-Use `phaseharness` to implement <task>.
-```
-
-Important: 실제 phaseharness run을 시작하기 전에 프로젝트에 architecture, coding convention 등 지침 문서가 있다면 `.phaseharness/context.example.json` 포맷을 참고해 `.phaseharness/context.json`에 꼭 연결해 주세요.
+대상 프로젝트는 git 저장소여야 하고, `python3`를 실행할 수 있어야 합니다.
+최초 commit은 일반 사용에는 필요하지 않지만, 병렬 작업용 worktree를 만들 때는 필요합니다.
 
 ## 빠른 시작
 
-agent에게 workflow skill 사용을 요청합니다.
+에이전트에게 Phaseharness로 작업하라고 요청하세요.
 
 ```text
 Use `phaseharness` to implement <task>.
 ```
 
-## 프로젝트 context 설정
+phaseharness 시작 전에 두 가지 옵션을 선택해야 합니다.
 
-설치 후 `.phaseharness/context.example.json`을 참고해 `.phaseharness/context.json`을 만들면 project-specific context를 활성화할 수 있습니다. example 파일은 문서용이며 active config로 사용하지 않습니다.
-
-```bash
-cp .phaseharness/context.example.json .phaseharness/context.json
-```
-
-`context-gather.documents`에는 구현 계획에 영향을 주는 문서를 적고, `evaluate.documents`에는 코드 평가 기준으로 삼을 문서를 적습니다. `evaluate.rules`에는 evaluate reviewer에게 직접 주입할 평가 규칙을 문자열 목록으로 적을 수 있습니다.
-
-`priority` 값은 아래 셋 중 하나입니다.
-
-- `required`: 관련성을 반드시 확인합니다. 관련 있는데 누락, unreadable, 충돌이 있으면 risk로 기록합니다.
-- `recommended`: 요청과 관련 있을 때 고려합니다.
-- `optional`: 명확히 관련 있을 때만 사용합니다.
-
-run을 만들기 전에 `phaseharness`는 먼저 현재 worktree에 active run이 있는지 확인합니다. active run이 있으면 아래 중 하나를 선택하게 합니다.
-
-- `resume`: 기존 active run을 현재 session에 바인딩하고 이어갑니다.
-- `start-new-in-worktree`: 새 git worktree와 branch를 만들고 별도 run을 시작하게 합니다.
-- `cancel`: 아무것도 하지 않습니다.
-
-active run이 없으면 `phaseharness`는 아래 옵션을 확인합니다.
-
-- `loop count`: `generate -> evaluate` cycle 최대 횟수
-- `commit mode`: `none`, `phase`, `final` 중 하나
+- `loop count`: 검토에서 문제가 발생했을 경우 구현을 다시 시도할 수 있는 횟수입니다.
+- `commit mode`: 작업 중 commit을 요청할지 정합니다.
 
 기본값은 아래와 같습니다.
 
@@ -87,214 +64,92 @@ loop count: 2
 commit mode: none
 ```
 
-확인이 끝나면 `phaseharness`가 run을 만들고, 현재 provider session에 바인딩한 뒤 run 파일 기준으로 첫 단계를 시작합니다.
+`commit mode`는 Phaseharness가 commit을 언제 요청할지 정하는 옵션입니다.
 
-## 병렬 run
+- `none`: 작업 중 commit을 요청하지 않습니다.
+- `phase`: `plan`에서 나눈 각 phase가 `generate` 단계에서 완료될 때마다 commit을 요청합니다.
+- `final`: phase마다 commit하지 않고, `evaluate` 단계가 통과하거나 경고만 남았을 때 마지막에 한 번 commit을 요청합니다.
 
-하나의 worktree에는 active phaseharness run을 하나만 둡니다. 병렬 phaseharness 작업은 같은 working tree에 여러 active run을 두는 방식이 아니라 git worktree로 분리합니다.
+commit은 자동으로 push되지 않습니다. 원할 때 에이전트에게 별도로 push를 요청하세요.
 
-```bash
-python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
-```
+## 중요: 프로젝트 지침 연결
 
-기본 naming 규칙은 아래와 같습니다.
+프로젝트에 아키텍처 문서, 코딩 규칙, 리뷰 기준처럼 에이전트가 따라야 할 지침 문서가 있다면,
+처음 실제 작업을 시작하기 전에 연결해 두는 것을 권장합니다.
 
-- run/worktree name: `YYYYMMDD-HHMMSS-<task-slug>`
-- branch: `phaseharness/<name>`
-- path: `<repo-parent>/<repo-name>.worktrees/<name>`
+모델 성능이 좋아지면서 `context-gather` 단계에서 에이전트가 저장소를 살펴보고 작업에 필요한
+문서를 찾아내는 경우가 많아졌습니다. 그래도 중요한 지침을 명시해 두면 작업 계획과 검토 기준에
+더 안정적으로 반영됩니다.
 
-새 run은 새 worktree에서 새 Codex/Claude session을 열고 시작하며, run을 만들 때 반환된 `run_id`를 사용합니다.
+> 프로젝트 상황에 맞는 지침 문서를 꾸준히 정리하고 연결해 두는 것이 Phaseharness를 잘 쓰는 방법이자 프로젝트에 맞는 하네스를 구축하는 첫 걸음입니다.
 
-## 수동 skill
-
-각 단계를 직접 실행할 수도 있습니다.
-
-- `clarify`: 요구사항, 성공 기준, 범위, 제외 범위, 가정, 열린 질문을 정리합니다.
-- `context-gather`: 저장소 구조, 관련 파일, 기존 패턴, 제약, 리스크, 검증 명령을 수집합니다.
-- `plan`: `artifacts/plan.md`와 자기완결적인 `phases/phase-NNN.md` 파일을 만듭니다. 기능 단위, 오래 걸리는 작업, 검증 기준이 다른 작업, 위험도가 다른 작업은 별도 phase로 나눕니다.
-- `generate`: 이미 존재하는 phase 파일 하나만 구현합니다. 일반 구현 명령으로 쓰지 않습니다.
-- `evaluate`: 현재 diff가 작업 기준을 만족하는지 검증합니다.
-- `commit`: 사용자가 명시적으로 요청했거나 Phaseharness가 commit prompt를 만들었을 때 의미 있는 commit을 만듭니다.
-
-수동 skill 실행은 한 단계만 수행하고 멈춥니다. Stop hook으로 다음 단계가 자동 진행되지 않습니다.
-
-## Phase 분리 기준
-
-`plan`은 phase 수를 줄이는 것보다 독립 구현과 독립 검증이 가능한지를 우선합니다.
-
-phase를 나누는 기준은 아래와 같습니다.
-
-- 사용자에게 보이는 기능이나 동작이 독립적으로 완성될 수 있으면 별도 phase로 나눕니다.
-- 작업이 오래 걸리거나 많은 파일을 건드릴 가능성이 있으면 더 작은 phase로 나눕니다.
-- 데이터 구조, 상태 처리, UI 동작, 외부 연동, 테스트 기반처럼 위험도가 다른 작업은 분리합니다.
-- 검증 명령이나 acceptance criteria가 다르면 분리합니다.
-- 이후 작업의 불확실성을 줄이는 준비 작업은 별도 phase로 둘 수 있습니다.
-- target files, allowed changes, forbidden changes가 너무 넓어지면 phase를 더 쪼갭니다.
-
-반대로 단순히 파일별로 나누는 것은 피합니다. 각 phase는 fresh implementer가 대화 기억 없이 구현할 수 있고, fresh reviewer가 phase 파일과 diff만 보고 검증할 수 있어야 합니다.
-
-## 자동 run
-
-자동 run은 `phaseharness`만 만듭니다. Stop hook은 자동 run만 이어갈 수 있습니다.
-
-Stop hook이 호출하는 명령은 아래 하나뿐입니다.
+`phaseharness` 설치 후 예시 파일을 복사하세요.
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
+cp .phaseharness/context.example.json .phaseharness/context.json
 ```
 
-Stop hook은 모델을 실행하지 않고, subagent를 만들지 않고, 파일을 수정하지 않고, 평가하지 않고, commit하지 않습니다. 상태 관리 스크립트에게 다음 prompt를 요청하고 그 prompt를 현재 session에 전달할 뿐입니다.
+그다음 `.phaseharness/context.json`을 프로젝트에 맞게 수정합니다.
 
-hook input의 session id가 없거나, run binding이 없거나, hook session id가 run에 바인딩된 session id와 다르면 Stop hook은 no-op 합니다.
+- 구현 계획에 영향을 주는 문서는 `context-gather.documents`에 넣습니다.
+- 코드 검토 기준으로 삼을 문서는 `evaluate.documents`에 넣습니다.
+- 추가 검토 규칙은 `evaluate.rules`에 넣습니다.
 
-어떤 단계가 `running` 상태로 남아 있으면 `--reprompt-running`은 새 작업을 시작하지 않고 같은 단계로 다시 들어가는 prompt를 반환합니다.
+문서 중요도는 아래처럼 정합니다.
 
-## 역할 구분
+- `required`: 관련 있으면 반드시 확인해야 합니다.
+- `recommended`: 관련 있을 때 고려합니다.
+- `optional`: 명확히 관련 있을 때만 사용합니다.
 
-현재 대화 session이 run을 제어합니다.
+프로젝트에 별도 지침 문서가 없다면 이 단계는 건너뛰어도 됩니다.
 
-- `clarify`, `context-gather`, `plan`은 현재 대화 session이 수행합니다.
-- `generate`는 새 구현 subagent 하나에게 phase 파일 하나만 위임합니다.
-- `evaluate`는 새 검토 subagent 하나에게 위임합니다.
-- subagent는 state command를 호출하지 않습니다.
-- subagent는 run 상태를 바꾸지 않습니다.
-- subagent는 commit하지 않습니다.
-- subagent는 맡은 작업 결과를 보고한 뒤 종료합니다. 현재 대화 session은 가능한 경우 subagent session을 닫습니다.
-- 현재 대화 session은 artifact를 쓰고, subagent 결과를 검토하고, 상태를 갱신하고, commit prompt를 처리합니다.
+## 단계별 프롬프트 커스터마이즈
 
-Phaseharness는 설치 시 subagent를 미리 정의하지 않습니다. `generate`와 `evaluate` skill이 해당 단계 실행 시 새 subagent 요청을 만듭니다.
+프로젝트 지침을 문서로 연결하는 것만으로 부족하다면, 각 단계의 프롬프트를 직접 수정할 수 있습니다.
 
-## Run 파일
+`clarify`, `context-gather`, `plan`, `generate`, `evaluate` 같은 단계별 프롬프트는 `.phaseharness/skills` 아래에 있습니다. 프로젝트에 맞게 작업 방식이나 검토 기준을 더 구체적으로 조정하고 싶다면 이 파일들을 수정하세요.
 
-하나의 run은 아래 파일들을 가집니다.
+수정한 skill 파일은 SessionStart 시 Codex와 Claude Code 쪽 skill 디렉터리로 동기화됩니다. `.agents/skills`나 `.claude/skills`를 직접 수정하지 말고, `.phaseharness/skills`를 SSOT(Single Source of Truth)로 관리하는 것이 좋습니다.
+
+## AGENTS.md / CLAUDE.md 가이드
+
+`AGENTS.md`나 `CLAUDE.md`에는 Phaseharness를 실행하기 전에 항상 필요한 최소한의 지침만 남기는 것이 좋습니다.
+
+단계별 작업 방식, 검토 기준, 프로젝트별 규칙은 `.phaseharness/skills`와 `.phaseharness/context.json`에 모아 관리하세요. 이렇게 하면 에이전트가 항상 읽는 전역 지침은 가볍게 유지하면서, Phaseharness 작업에 필요한 세부 지침은 하네스 안에서 점진적으로 개선할 수 있습니다.
+
+## 세션이 끊겼을 때 이어가기
+
+> 여기서 worktree는 git worktree를 의미합니다.
+
+작업 도중 세션이 종료된 뒤 같은 프로젝트 폴더에서 Codex 또는 Claude를 다시 열면, 진행 중이던 Phaseharness 작업을 발견한 에이전트가 어떻게 할지 물어봅니다.
+
+- `resume`: 기존 작업을 이어서 진행합니다.
+- `start-new`: 기존 작업을 잠시 멈추고 같은 worktree에서 새 작업을 시작합니다.
+- `start-new-in-worktree`: 기존 작업은 그대로 두고, 별도 git worktree에서 새 작업을 시작합니다.
+
+이전 작업을 계속하려면 `resume`을 선택하세요.
+두 작업을 따로 진행하고 싶으면 `start-new-in-worktree`를 선택하세요.
+
+`start-new-in-worktree`를 선택하면 Phaseharness는 새 worktree와 branch를 만들고 경로를 알려줍니다. 이 작업은 현재 세션에서 자동으로 이어서 진행하지 않습니다. 안내받은 worktree 경로에서 새 Codex 또는 Claude 세션을 열고, Phaseharness 작업을 이어서 진행해 달라고 요청하세요.
+
+이렇게 분리하는 이유는 한 세션이 여러 worktree를 오가며 작업하면 파일 경로, git 상태, Phaseharness 실행 상태가 섞일 수 있기 때문입니다. 각 worktree는 별도 세션에서 다루는 것이 안전합니다.
+
+## 특정 단계만 실행하기
+
+전체 workflow를 실행하기에는 작업이 작거나, 특정 단계의 도움만 필요할 때는 개별 skill만 실행할 수 있습니다.
 
 ```text
-.phaseharness/runs/<run-id>/
-  run.json
-  artifacts/
-    clarify.md
-    context.md
-    plan.md
-    generate.md
-    evaluate.md
-  phases/
-    phase-001.md
-    phase-002.md
+Use `clarify` for <task>.
+Use `context-gather` for <task>.
+Use `plan` for <task>.
+Use `generate` for phase-001.
+Use `evaluate` for the current diff.
 ```
 
-`run.json`에는 아래 상태가 기록됩니다.
+개별 skill은 요청한 단계만 한 번 수행하고 멈춥니다. 큰 작업을 처음부터 끝까지 맡길 때는 `phaseharness`를 사용하고, 필요한 부분만 실행하고 싶을 때는 아래처럼 선택하면 됩니다.
 
-- 현재 stage
-- 수동/자동 mode
-- loop count
-- commit mode
-- stage별 상태
-- generate phase queue
-- evaluate 결과
-- commit prompt 처리 결과
-- run 시작 시점에 이미 변경되어 있던 파일 목록
-
-## 상태 관리 명령
-
-자동 run 생성:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py start \
-  --mode auto \
-  --request "<request>" \
-  --loop-count 2 \
-  --commit-mode none \
-  --json
-```
-
-상태 확인:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py status --json
-```
-
-다음 continuation prompt 생성:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
-```
-
-active run을 현재 session에 다시 바인딩하고 resume:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py resume --json
-```
-
-병렬 작업용 worktree 생성:
-
-```bash
-python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
-```
-
-stage 상태 기록:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py set-stage clarify completed --run-id <run-id>
-```
-
-generate phase 상태 기록:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py set-generate-phase phase-001 completed --run-id <run-id>
-```
-
-commit prompt 처리 결과 기록:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py set-commit phase-001 committed --run-id <run-id>
-python3 .phaseharness/bin/phaseharness-state.py set-commit final no_changes --run-id <run-id> --message "no eligible changes to commit"
-```
-
-## Commit mode
-
-- `none`: commit prompt를 만들지 않습니다.
-- `phase`: generate phase가 하나 끝날 때마다 commit을 요청합니다.
-- `final`: `evaluate`가 `pass` 또는 `warn`이면 마지막에 한 번 commit을 요청합니다.
-
-Commit prompt에는 아래 정보가 포함됩니다.
-
-- run id
-- commit key
-- commit mode
-- commit 가능한 파일
-- run 시작 전부터 변경되어 있어 제외된 파일
-- runtime 파일과 도구 연결 파일 중 기본 제외 대상
-- 반드시 실행해야 하는 `set-commit` 후속 명령
-
-실제 git commit은 `commit`만 수행해야 합니다. commit message는 phase 완료 여부가 아니라 실제 변경 내용을 설명해야 합니다.
-
-## 안전 규칙
-
-Phaseharness는 workflow 제어와 실제 실행을 분리합니다.
-
-- `phaseharness-state.py`는 run 파일과 prompt만 관리합니다.
-- `phaseharness-hook.py`는 Stop hook wrapper입니다.
-- Stop hook은 현재 session id에 바인딩된 활성 자동 run이 있을 때만 동작합니다.
-- 수동 skill run은 자동으로 이어지지 않습니다.
-- 병렬 자동 run은 별도 git worktree에서 실행합니다.
-- runtime 파일과 도구 연결 파일은 commit prompt에서 제외됩니다.
-- run 시작 시점에 이미 변경되어 있던 파일은 commit prompt에서 제외됩니다.
-
-## Smoke check
-
-설치 후 아래 명령으로 확인합니다.
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py --help
-python3 .phaseharness/bin/phaseharness-hook.py --help
-python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
-python3 .phaseharness/bin/phaseharness-worktree.py --help
-python3 -m py_compile .phaseharness/bin/*.py
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
-```
-
-활성 run이 없을 때 기대 출력에는 아래 값이 포함됩니다.
-
-```json
-{ "action": "none" }
-```
+- 요구사항이나 범위만 먼저 정리하고 싶다면 `clarify`를 사용합니다.
+- 구현 전에 관련 코드와 문서 context만 모으고 싶다면 `context-gather`를 사용합니다.
+- 구현 계획과 phase 분리만 받고 싶다면 `plan`을 사용합니다.
+- 구현은 끝났고 현재 diff를 검토하고 싶다면 `evaluate`를 사용합니다.
+- 단, `generate`는 일반 구현 요청에 단독으로 사용하지 않습니다. `plan`으로 나눈 phase 파일이 있을 때, 특정 phase 하나를 구현하는 용도로 사용합니다.

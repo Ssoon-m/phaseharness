@@ -1,84 +1,63 @@
 # Phaseharness
 
-Phaseharness is a file-based workflow system for large AI coding tasks.
+Phaseharness is a harness system that helps AI coding agents process work in stages.
 
-Work proceeds through these stages:
+Rather than providing a universal harness for every project, it focuses on helping you
+build a custom harness that fits each project's guidelines and workflow.
+
+Users can connect architecture documents, coding rules, review criteria, team tacit
+knowledge, and other project-specific guidance to Phaseharness. This helps the agent
+actively reflect project context while planning, implementing, and reviewing work.
+
+The `context-gather` stage records which documents were referenced and what was read
+from them in `.phaseharness/runs/*/artifacts/context.md`. This makes it easier to see
+what the plan was based on.
+
+The more you use `phaseharness`, the easier it becomes to identify which guidance was
+missing when results do not match expectations. Over time, this creates a natural loop
+for improving the project documentation.
+
+## Workflow
+
+Phaseharness makes the agent follow this sequence:
 
 ```text
-clarify -> context_gather -> plan -> generate -> evaluate
+clarify -> context-gather -> plan -> generate -> evaluate
 ```
 
-Instead of relying on chat history, each task keeps its progress in files:
+- `clarify`: organize the goal, scope, success criteria, and required decisions.
+- `context-gather`: inspect relevant code and project guidance.
+- `plan`: split the work into steps that are easier to implement and review.
+- `generate`: implement the planned steps.
+- `evaluate`: review whether the final diff satisfies the original request and criteria.
 
-```text
-.phaseharness/runs/<run-id>/
-```
+You can still talk to the agent normally while the workflow is running. If requirements change, tell the agent what changed.
+If you want it to stop, ask it to pause or stop.
 
-This makes long tasks easier to pause, resume, inspect, and avoid duplicating.
+## Install
 
-## What It Does
-
-Phaseharness splits large coding work into these steps:
-
-- clarify requirements
-- inspect repository structure and related files
-- create independently implementable phase files
-- implement one phase at a time
-- evaluate the current diff against the agreed criteria
-
-The Python state management script only reads and writes state files and prints the next prompt. It does not run a model, create subagents, edit product code, evaluate results, or run `git commit`.
-
-## Getting Started With Phaseharness
-
-Open your coding agent in the repository where you want to install Phaseharness, then enter:
+Open Codex or Claude in the repository where you want to use Phaseharness, then paste:
 
 ```text
 Install phaseharness from this installer document:
 https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 ```
 
-After installation, use the `phaseharness` skill to start a workflow:
-
-```text
-Use `phaseharness` to implement <task>.
-```
-
-Important: before starting a real phaseharness run, if the repository has architecture, coding convention, or other guidance documents, configure `.phaseharness/context.json` using `.phaseharness/context.example.json` as the format reference.
+The target project must be a git repository and must be able to run `python3`.
+An initial commit is not required for normal use, but it is required when creating a parallel worktree.
 
 ## Quick Start
 
-Ask the agent to use the workflow skill:
+Ask the agent to use Phaseharness for the task:
 
 ```text
 Use `phaseharness` to implement <task>.
 ```
 
-## Project Context Config
+Before starting phaseharness, choose two options:
 
-After installation, copy `.phaseharness/context.example.json` to `.phaseharness/context.json` to enable project-specific context. The example file is documentation only and is not used as active configuration.
-
-```bash
-cp .phaseharness/context.example.json .phaseharness/context.json
-```
-
-Use `context-gather.documents` for documents that affect implementation planning. Use `evaluate.documents` for documents that should guide code evaluation. Use `evaluate.rules` for evaluation rules that should be injected directly into the reviewer prompt.
-
-Supported `priority` values:
-
-- `required`: must be checked for relevance. Relevant missing, unreadable, or conflicting guidance is recorded as risk.
-- `recommended`: considered when relevant to the request.
-- `optional`: used only when clearly relevant.
-
-Before creating a run, `phaseharness` first checks whether this worktree already has an active run. If it does, it asks you to choose:
-
-- `resume`: bind the existing active run to the current session and continue it
-- `start-new-in-worktree`: create a new git worktree and branch for a separate run
-- `cancel`: do nothing
-
-If no active run exists, `phaseharness` checks these options:
-
-- `loop count`: maximum number of `generate -> evaluate` cycles
-- `commit mode`: one of `none`, `phase`, `final`
+- `loop count`: how many times implementation can be retried if review finds problems.
+- `commit mode`: whether to request commits during the workflow.
 
 Defaults:
 
@@ -87,214 +66,89 @@ loop count: 2
 commit mode: none
 ```
 
-After confirmation, `phaseharness` creates a run, binds it to the current provider session, and starts the first stage from the run files.
+`commit mode` controls when Phaseharness asks for commits.
 
-## Parallel Runs
+- `none`: do not ask for commits during the workflow.
+- `phase`: ask for a commit whenever a phase from `plan` is completed in `generate`.
+- `final`: do not commit after each phase; ask for one final commit when `evaluate` passes or has only warnings.
 
-One worktree has at most one active phaseharness run. Parallel phaseharness work uses git worktrees, not multiple active runs in the same working tree.
+Commits are not pushed automatically. Ask the agent to push separately when you want that.
 
-```bash
-python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
-```
+## Important: Connect Project Guidance
 
-The default naming is:
+If your project has guidance documents the agent should follow, such as architecture documents, coding rules, or review criteria, connect them before starting the first real task.
 
-- run/worktree name: `YYYYMMDD-HHMMSS-<task-slug>`
-- branch: `phaseharness/<name>`
-- path: `<repo-parent>/<repo-name>.worktrees/<name>`
+As models improve, the agent often finds task-relevant documents by inspecting the repository during `context-gather`. Still, explicitly listing important guidance makes it more likely to be reflected consistently in the work plan and review criteria.
 
-Start a new Codex/Claude session in the new worktree before starting the new run, and use the returned `run_id` when creating that run.
+> Continuously maintaining and connecting project-specific guidance is one of the best ways to use Phaseharness well and the first step toward building a harness that fits your project.
 
-## Manual Skills
-
-You can run each stage directly:
-
-- `clarify`: organize requirements, success criteria, scope, non-goals, assumptions, and open questions.
-- `context-gather`: collect repository structure, relevant files, existing patterns, constraints, risks, and validation commands.
-- `plan`: create `artifacts/plan.md` and self-contained `phases/phase-NNN.md` files. Split feature slices, long-running work, work with different validation criteria, and work with different risk profiles into separate phases.
-- `generate`: implement exactly one existing phase file. Do not use it as a general implementation command.
-- `evaluate`: verify whether the current diff satisfies the task criteria.
-- `commit`: create a meaningful commit when the user explicitly requests it or when Phaseharness creates a commit prompt.
-
-Manual skill runs perform one stage and stop. They do not continue automatically through the Stop hook.
-
-## Phase Splitting Criteria
-
-`plan` prioritizes independent implementation and independent review over minimizing the number of phases.
-
-Split phases when:
-
-- a user-visible feature or behavior can be completed independently
-- the work is likely to take a long time or touch many files
-- the work has a different risk profile, such as data structure changes, state handling, UI behavior, external integration, or test infrastructure
-- validation commands or acceptance criteria differ
-- a preparatory step reduces uncertainty for later work
-- target files, allowed changes, or forbidden changes would otherwise become too broad
-
-Avoid splitting only by file. Each phase should be implementable by a fresh implementer without chat memory, and reviewable by a fresh reviewer using only the phase file and diff.
-
-## Automatic Runs
-
-Only `phaseharness` creates automatic runs. The Stop hook can continue only automatic runs.
-
-The Stop hook calls only this command:
+After installing `phaseharness`, copy the example file:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
+cp .phaseharness/context.example.json .phaseharness/context.json
 ```
 
-The Stop hook does not run a model, create a subagent, edit files, evaluate, or commit. It only asks the state management script for the next prompt and passes that prompt to the current session.
+Then edit `.phaseharness/context.json` for your project.
 
-The Stop hook is a no-op if the hook session id is missing, the run has no binding, or the hook session id does not match the run's bound session id.
+- Put documents that affect implementation planning under `context-gather.documents`.
+- Put documents that should guide code review under `evaluate.documents`.
+- Put additional review rules under `evaluate.rules`.
 
-If a stage remains `running`, `--reprompt-running` returns a prompt to re-enter the same stage instead of starting new work.
+Use these priority values:
 
-## Roles
+- `required`: must be checked when relevant.
+- `recommended`: considered when relevant.
+- `optional`: used only when clearly relevant.
 
-The current conversation session controls the run.
+If the project has no separate guidance documents, you can skip this step.
 
-- `clarify`, `context-gather`, and `plan` are performed by the current conversation session.
-- `generate` delegates exactly one phase file to one new implementation subagent.
-- `evaluate` delegates to one new review subagent.
-- Subagents do not call state commands.
-- Subagents do not change run state.
-- Subagents do not commit.
-- Subagents report the assigned result and stop. The current conversation session closes the subagent session when the provider supports it.
-- The current conversation session writes artifacts, reviews subagent results, updates state, and handles commit prompts.
+## Customize Stage Prompts
 
-Phaseharness does not predefine subagents during installation. The `generate` and `evaluate` skills create new subagent requests when those stages run.
+If connecting project guidance as documents is not enough, you can directly edit the prompt for each stage.
 
-## Run Files
+Stage prompts such as `clarify`, `context-gather`, `plan`, `generate`, and `evaluate` live under `.phaseharness/skills`. Edit these files when you want to make the workflow or review criteria more specific to your project.
 
-Each run has these files:
+Modified skill files are synced to the Codex and Claude Code skill directories on SessionStart. Do not edit `.agents/skills` or `.claude/skills` directly; manage `.phaseharness/skills` as the SSOT (Single Source of Truth).
+
+## AGENTS.md / CLAUDE.md Guide
+
+Keep only the minimum guidance that is always required before running Phaseharness in `AGENTS.md` or `CLAUDE.md`.
+
+Manage stage-specific workflow, review criteria, and project-specific rules in `.phaseharness/skills` and `.phaseharness/context.json`. This keeps the global instructions that agents always read lightweight, while allowing detailed Phaseharness guidance to improve gradually inside the harness.
+
+## Resume After A Session Ends
+
+> Here, worktree means a git worktree.
+
+If a session ends during work and you reopen Codex or Claude in the same project folder, the agent will detect the in-progress Phaseharness task and ask what to do.
+
+- `resume`: continue the existing task.
+- `start-new`: pause the existing task and start a new task in the same worktree.
+- `start-new-in-worktree`: keep the existing task as-is and start the new task in a separate git worktree.
+
+Choose `resume` to continue the previous task.
+Choose `start-new-in-worktree` when you want to keep two tasks separate.
+
+If you choose `start-new-in-worktree`, Phaseharness creates a new worktree and branch, then tells you the path. It does not automatically continue that work in the current session. Open a new Codex or Claude session at the provided worktree path and ask it to continue the Phaseharness task.
+
+This separation exists because using one session across multiple worktrees can mix up file paths, git state, and Phaseharness run state. Each worktree is safer to handle in its own session.
+
+## Run Only One Stage
+
+If the full workflow is too much for a small task, or you only need help from one stage, you can run an individual skill directly.
 
 ```text
-.phaseharness/runs/<run-id>/
-  run.json
-  artifacts/
-    clarify.md
-    context.md
-    plan.md
-    generate.md
-    evaluate.md
-  phases/
-    phase-001.md
-    phase-002.md
+Use `clarify` for <task>.
+Use `context-gather` for <task>.
+Use `plan` for <task>.
+Use `generate` for phase-001.
+Use `evaluate` for the current diff.
 ```
 
-`run.json` records:
+Individual skills run only the requested stage once and then stop. Use `phaseharness` when you want to hand off a large task end to end; choose individual skills when you only need part of the workflow.
 
-- current stage
-- manual or automatic mode
-- loop count
-- commit mode
-- stage statuses
-- generate phase queue
-- evaluate result
-- commit prompt results
-- files that were already changed when the run started
-
-## State Management Commands
-
-Create an automatic run:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py start \
-  --mode auto \
-  --request "<request>" \
-  --loop-count 2 \
-  --commit-mode none \
-  --json
-```
-
-Check status:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py status --json
-```
-
-Create the next continuation prompt:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
-```
-
-Resume and rebind an active run to the current session:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py resume --json
-```
-
-Create a parallel worktree:
-
-```bash
-python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
-```
-
-Record a stage status:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py set-stage clarify completed --run-id <run-id>
-```
-
-Record a generate phase status:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py set-generate-phase phase-001 completed --run-id <run-id>
-```
-
-Record a commit prompt result:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py set-commit phase-001 committed --run-id <run-id>
-python3 .phaseharness/bin/phaseharness-state.py set-commit final no_changes --run-id <run-id> --message "no eligible changes to commit"
-```
-
-## Commit Mode
-
-- `none`: do not create commit prompts.
-- `phase`: request a commit whenever a generate phase completes.
-- `final`: request one final commit when `evaluate` is `pass` or `warn`.
-
-Commit prompts include:
-
-- run id
-- commit key
-- commit mode
-- files eligible for commit
-- files skipped because they were already changed before the run started
-- runtime files and tool connection files skipped by default
-- required `set-commit` follow-up command
-
-Only `commit` should run the actual git commit. The commit message should describe the real change, not merely state that a phase finished.
-
-## Safety Rules
-
-Phaseharness separates workflow control from execution.
-
-- `phaseharness-state.py` only manages run files and prompts.
-- `phaseharness-hook.py` is a Stop hook wrapper.
-- Stop hooks do nothing unless an automatic run is active and bound to the current session id.
-- Manual skill runs do not continue automatically.
-- Parallel automatic runs use separate git worktrees.
-- Runtime files and tool connection files are excluded from commit prompts.
-- Files that were already changed when a run started are excluded from commit prompts.
-
-## Smoke Check
-
-After installation, verify with:
-
-```bash
-python3 .phaseharness/bin/phaseharness-state.py --help
-python3 .phaseharness/bin/phaseharness-hook.py --help
-python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
-python3 .phaseharness/bin/phaseharness-worktree.py --help
-python3 -m py_compile .phaseharness/bin/*.py
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
-```
-
-When no run is active, the expected output includes:
-
-```json
-{ "action": "none" }
-```
+- Use `clarify` when you only want to organize requirements or scope first.
+- Use `context-gather` when you only want to collect relevant code and document context before implementing.
+- Use `plan` when you only want an implementation plan and phase split.
+- Use `evaluate` when implementation is already done and you want the current diff reviewed.
+- Do not use `generate` by itself as a general implementation request. Use it only when there is a phase file produced by `plan`, and you want to implement one specific phase.

@@ -23,12 +23,14 @@ Run from the target repository root:
 
 ```bash
 pwd
-git rev-parse --verify HEAD
+git rev-parse --is-inside-work-tree
 git status --short
 command -v python3
 ```
 
-Stop if this is not a git repository, there is no initial commit, or `python3` is unavailable. Dirty worktree is allowed, but do not overwrite unrelated user changes.
+Stop if this is not a git repository or `python3` is unavailable. Dirty worktree is allowed, but do not overwrite unrelated user changes.
+
+An initial commit is not required for normal installation or a single Phaseharness run. It is required only when using `start-new-in-worktree`, because git worktrees need a commit ref such as `HEAD`.
 
 ## Resolve The Source Repository
 
