@@ -6,9 +6,16 @@ import json
 import os
 import re
 import subprocess
+import sys
+from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - phaseharness hooks currently target Unix-like shells.
+    fcntl = None
 
 
 STAGES = ["clarify", "context_gather", "plan", "generate", "evaluate"]
@@ -30,6 +37,20 @@ ARTIFACTS = {
 COMMIT_MODES = ["none", "phase", "final"]
 COMMIT_TERMINAL_STATUSES = {"committed", "no_changes", "skipped"}
 PROVIDERS = ["codex", "claude"]
+STATE_LOCKED_COMMANDS = {
+    "start",
+    "start-new",
+    "status",
+    "next",
+    "set-stage",
+    "set-generate-phase",
+    "set-commit",
+    "wait-user",
+    "pause",
+    "resume",
+    "park-active",
+    "clear-active",
+}
 SESSION_ENV_KEYS = {
     "codex": ["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
     "claude": ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"],
@@ -70,6 +91,21 @@ def find_project_root(start: Path | None = None) -> Path:
 
 def harness_dir(root: Path) -> Path:
     return root / ".phaseharness"
+
+
+@contextmanager
+def state_lock(root: Path):
+    if fcntl is None:
+        raise RuntimeError("phaseharness state locking requires fcntl")
+    lock_dir = harness_dir(root) / "state"
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    lock_path = lock_dir / "phaseharness.lock"
+    with lock_path.open("a+", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            fcntl.flock(handle.fileno(), fcntl.LOCK_UN)
 
 
 def runs_dir(root: Path) -> Path:
@@ -436,10 +472,12 @@ def create_run(
     session_id: str | None,
 ) -> dict[str, Any]:
     target_dir = run_dir(root, run_id)
-    if target_dir.exists():
+    try:
+        target_dir.mkdir(parents=True, exist_ok=False)
+    except FileExistsError:
         raise RuntimeError(f"run already exists: {run_id}")
-    (target_dir / "artifacts").mkdir(parents=True, exist_ok=True)
-    (target_dir / "phases").mkdir(parents=True, exist_ok=True)
+    (target_dir / "artifacts").mkdir()
+    (target_dir / "phases").mkdir()
     state = initial_run(
         root,
         run_id,
@@ -1292,7 +1330,15 @@ def build_parser() -> argparse.ArgumentParser:
 def main() -> int:
     parser = build_parser()
     args = parser.parse_args()
-    return args.func(args)
+    try:
+        if getattr(args, "command", None) in STATE_LOCKED_COMMANDS:
+            root = find_project_root()
+            with state_lock(root):
+                return args.func(args)
+        return args.func(args)
+    except Exception as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
 
 if __name__ == "__main__":
