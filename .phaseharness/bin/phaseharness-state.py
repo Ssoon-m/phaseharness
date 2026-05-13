@@ -321,7 +321,9 @@ def binding_error(
 
 
 def ensure_update_allowed(state: dict[str, Any], provider: str | None, session_id: str | None) -> None:
-    error = binding_error(state_binding(state), provider, session_id, require=False)
+    if state.get("mode") != "auto":
+        return
+    error = binding_error(state_binding(state), provider, session_id, require=True)
     if error:
         raise RuntimeError(error)
 
