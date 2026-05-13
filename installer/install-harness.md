@@ -85,11 +85,11 @@ This creates or updates:
 
 Subagents are not predeclared. The `generate` and `evaluate` skills create fresh subagent requests when those stages run.
 
-## Optional Project Context Config
+## Project Context Config
 
 `.phaseharness/context.example.json` and `.phaseharness/context.schema.json` are installed as documentation for project-specific context.
 
-To activate project-specific context, copy the example to `.phaseharness/context.json` and edit it for the target repository:
+After installing, ask the user to connect any existing project rule documents before the first real phaseharness run:
 
 ```bash
 cp .phaseharness/context.example.json .phaseharness/context.json
@@ -123,3 +123,19 @@ python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-r
 ```
 
 When no automatic run is active, the output should include `"action": "none"`.
+
+## Required Post-Install Message
+
+After smoke verification, tell the user exactly what was installed and what to do next. Do not assume they will read the README.
+
+Use this message shape:
+
+```text
+Phaseharness is installed.
+
+Important: before starting a real phaseharness run, if this project has architecture, coding convention, or other guidance documents, please connect them in `.phaseharness/context.json` using `.phaseharness/context.example.json` as the format reference.
+
+Then start a workflow with:
+
+Use `phaseharness` to implement <task>.
+```

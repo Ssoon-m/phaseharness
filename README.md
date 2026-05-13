@@ -37,6 +37,14 @@ Install phaseharness from this installer document:
 https://github.com/Ssoon-m/phaseharness/blob/main/installer/install-harness.md
 ```
 
+After installation, use the `phaseharness` skill to start a workflow:
+
+```text
+Use `phaseharness` to implement <task>.
+```
+
+Important: before starting a real phaseharness run, if the repository has architecture, coding convention, or other guidance documents, configure `.phaseharness/context.json` using `.phaseharness/context.example.json` as the format reference.
+
 ## Quick Start
 
 Ask the agent to use the workflow skill:
