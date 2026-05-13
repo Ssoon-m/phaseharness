@@ -425,6 +425,8 @@ def save_run(root: Path, state: dict[str, Any]) -> None:
 
 def set_active(root: Path, state: dict[str, Any]) -> None:
     binding = state_binding(state) or {}
+    worktree = state.get("worktree")
+    worktree_root = worktree.get("root") if isinstance(worktree, dict) else None
     save_json(
         active_path(root),
         {
@@ -437,7 +439,7 @@ def set_active(root: Path, state: dict[str, Any]) -> None:
             "session_id": binding.get("session_id"),
             "bound_at": binding.get("bound_at"),
             "bound_source": binding.get("bound_source"),
-            "worktree_root": None,
+            "worktree_root": worktree_root or str(root),
             "updated_at": now_iso(),
         },
     )
