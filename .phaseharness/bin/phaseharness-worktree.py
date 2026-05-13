@@ -5,6 +5,7 @@ import argparse
 import json
 import re
 import subprocess
+import sys
 from datetime import datetime
 from pathlib import Path
 from typing import Any
@@ -211,7 +212,7 @@ def main() -> int:
     try:
         return args.func(args)
     except Exception as exc:
-        print(f"error: {exc}")
+        print(f"error: {exc}", file=sys.stderr)
         return 1
 
 
