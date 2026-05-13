@@ -178,7 +178,7 @@ def command_create(args: argparse.Namespace) -> int:
         "handoff": {
             "cwd": str(new_harness_root),
             "commands": [resume_command, next_command],
-            "note": "Open a new Codex/Claude session in this cwd. Do not continue this run from the original session.",
+            "note": "Tell the user to open a new Codex/Claude session at the worktree path and ask it to continue through the phaseharness skill. Do not ask the user to run state scripts directly.",
         },
     }
     print(json.dumps(output, indent=2, ensure_ascii=False) if args.json else str(path))

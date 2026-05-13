@@ -70,14 +70,13 @@ python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" 
 
 This creates the git worktree and also creates an unbound auto run under the new worktree's `.phaseharness/runs/<run-id>/`. It must not change the current worktree's active run.
 
-Tell the user the worktree path, harness path, branch, and run id. Tell them to start a new Codex/Claude session with cwd set to the returned harness path, then run:
+Tell the user the worktree path, harness path, branch, and run id. Tell them to open a new Codex/Claude session at the returned worktree path and ask that session to continue through the phaseharness skill. Use this Korean guidance:
 
-```bash
-python3 .phaseharness/bin/phaseharness-state.py resume --json
-python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
+```text
+새 Codex/Claude 세션을 worktree path에서 열고, phaseharness skill로 이 worktree의 active run을 이어서 작업해 달라고 요청하세요.
 ```
 
-Do not run those handoff commands in the current session. The current session remains bound to the original worktree. Do not bind a second run to the current session and do not ask the user to repeat the original request.
+Do not tell the user to run `phaseharness-state.py` commands directly for the new worktree handoff. Do not run handoff continuation commands in the current session. The current session remains bound to the original worktree. Do not bind a second run to the current session and do not ask the user to repeat the original request.
 
 5. Before creating a new auto run, ask for:
 
@@ -138,7 +137,7 @@ python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-r
   - branch: `phaseharness/<name>`
   - path: `<repo-parent>/<repo-name>.worktrees/<name>`
   - an unbound auto run under the new worktree's `.phaseharness/runs/<run-id>/`
-- Start a new session whose cwd is the returned harness path, run `resume`, then run `next`.
+- Start a new session whose cwd is the returned worktree path, then ask that session to continue the active run through the phaseharness skill.
 
 ## Manual Skills
 
