@@ -27,8 +27,13 @@ def load_config(root: Path) -> dict[str, Any] | None:
 
 
 def doc_status(root: Path, item: dict[str, Any]) -> tuple[str, list[str]]:
+    root_resolved = root.resolve()
     if "path" in item:
-        path = root / str(item["path"])
+        path = (root / str(item["path"])).resolve()
+        try:
+            rel = path.relative_to(root_resolved)
+        except ValueError:
+            return "invalid", []
         if not path.exists():
             return "missing", []
         if not path.is_file():
@@ -38,12 +43,19 @@ def doc_status(root: Path, item: dict[str, Any]) -> tuple[str, list[str]]:
                 pass
         except OSError:
             return "unreadable", []
-        return "exists", [str(path.relative_to(root))]
+        return "exists", [str(rel)]
     if "glob" in item:
-        matches = sorted(path for path in root.glob(str(item["glob"])) if path.is_file())
+        pattern = str(item["glob"])
+        if Path(pattern).is_absolute() or ".." in Path(pattern).parts:
+            return "invalid", []
+        try:
+            paths = sorted(path for path in root.glob(pattern) if path.is_file())
+            matches = [str(path.resolve().relative_to(root_resolved)) for path in paths]
+        except (ValueError, NotImplementedError, OSError):
+            return "invalid", []
         if not matches:
             return "no_matches", []
-        return "matched", [str(path.relative_to(root)) for path in matches]
+        return "matched", matches
     return "invalid", []
 
 
