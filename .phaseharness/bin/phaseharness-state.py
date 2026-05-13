@@ -927,12 +927,17 @@ def command_start(args: argparse.Namespace) -> int:
     ensure_state_files(root)
     stage = normalize_stage(args.stage)
     mode = args.mode
-    provider, session_id = identity_from_args(args)
+    defer_session_binding = bool(getattr(args, "defer_session_binding", False))
+    if defer_session_binding and mode != "auto":
+        raise RuntimeError("--defer-session-binding is only valid for auto runs")
+    if defer_session_binding and (args.provider or args.session_id):
+        raise RuntimeError("--defer-session-binding cannot be combined with explicit session identity")
+    provider, session_id = (None, None) if defer_session_binding else identity_from_args(args)
     if mode == "auto":
         active = load_json(active_path(root), {"status": "inactive"})
         if active.get("status") in ("active", "waiting_user") and active.get("active_run") and not args.force:
             raise RuntimeError(f"active run already exists: {active.get('active_run')}")
-        if not provider or not session_id:
+        if not defer_session_binding and (not provider or not session_id):
             raise RuntimeError("auto run requires a session binding; pass --provider and --session-id if it cannot be inferred")
     run_id = args.run_id or next_run_id(root, args.request)
     output = create_run(
@@ -1201,6 +1206,7 @@ def build_parser() -> argparse.ArgumentParser:
     start.add_argument("--loop-count", type=positive_int, default=1)
     start.add_argument("--commit-mode", choices=COMMIT_MODES, default="none")
     start.add_argument("--force", action="store_true")
+    start.add_argument("--defer-session-binding", action="store_true")
     start.add_argument("--json", action="store_true")
     add_identity_args(start)
     start.set_defaults(func=command_start)

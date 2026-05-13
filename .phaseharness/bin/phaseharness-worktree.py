@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any
 
 
-def find_project_root(start: Path | None = None) -> Path:
+def find_git_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
     if current.is_file():
         current = current.parent
@@ -19,6 +19,24 @@ def find_project_root(start: Path | None = None) -> Path:
             return current
         current = current.parent
     raise RuntimeError("could not find git project root")
+
+
+def find_harness_root(start: Path | None = None) -> Path:
+    current = (start or Path.cwd()).resolve()
+    if current.is_file():
+        current = current.parent
+    while current != current.parent:
+        if (current / ".phaseharness").is_dir():
+            return current
+        current = current.parent
+    raise RuntimeError("could not find phaseharness root")
+
+
+def relative_to_git_root(path: Path, git_root: Path) -> Path:
+    try:
+        return path.resolve().relative_to(git_root.resolve())
+    except ValueError as exc:
+        raise RuntimeError(f"phaseharness root is not inside git root: {path}") from exc
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -77,20 +95,91 @@ def create_worktree(root: Path, path: Path, branch: str, base: str) -> None:
         raise RuntimeError(result.stderr.strip() or "git worktree add failed")
 
 
+def start_run_in_worktree(
+    harness_root: Path,
+    run_id: str,
+    request: str,
+    stage: str,
+    loop_count: int,
+    commit_mode: str,
+) -> dict[str, Any]:
+    runner = harness_root / ".phaseharness" / "bin" / "phaseharness-state.py"
+    if not runner.exists():
+        raise RuntimeError(f"new worktree is missing phaseharness runner: {runner}")
+    result = subprocess.run(
+        [
+            "python3",
+            str(runner),
+            "start",
+            "--mode",
+            "auto",
+            "--defer-session-binding",
+            "--request",
+            request,
+            "--run-id",
+            run_id,
+            "--stage",
+            stage,
+            "--loop-count",
+            str(loop_count),
+            "--commit-mode",
+            commit_mode,
+            "--json",
+        ],
+        cwd=str(harness_root),
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or result.stdout.strip() or "failed to create run in new worktree")
+    try:
+        data = json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        raise RuntimeError(f"state runner returned invalid JSON: {result.stdout.strip()}") from exc
+    if not isinstance(data, dict):
+        raise RuntimeError("state runner returned non-object JSON")
+    return data
+
+
 def command_create(args: argparse.Namespace) -> int:
-    root = find_project_root()
+    harness_root = find_harness_root()
+    root = find_git_root(harness_root)
+    harness_relpath = relative_to_git_root(harness_root, root)
     require_git_repo(root)
     run_id = args.name or next_name(root, args.request)
     branch = args.branch or f"phaseharness/{run_id}"
     path = Path(args.path).expanduser().resolve() if args.path else default_worktree_path(root, run_id)
+    new_harness_root = path / harness_relpath
     base = resolve_base(root, args.base)
     create_worktree(root, path, branch, base)
+    started = None
+    if not args.no_start_run:
+        started = start_run_in_worktree(
+            new_harness_root,
+            run_id,
+            args.request,
+            args.stage,
+            args.loop_count,
+            args.commit_mode,
+        )
+    resume_command = "python3 .phaseharness/bin/phaseharness-state.py resume --json"
+    next_command = "python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json"
     output: dict[str, Any] = {
         "run_id": run_id,
         "branch": branch,
         "worktree_path": str(path),
+        "harness_path": str(new_harness_root),
         "base": base,
         "base_ref": args.base,
+        "run_created": started is not None,
+        "run": started,
+        "resume_command": resume_command,
+        "next_command": next_command,
+        "handoff": {
+            "cwd": str(new_harness_root),
+            "commands": [resume_command, next_command],
+            "note": "Open a new Codex/Claude session in this cwd. Do not continue this run from the original session.",
+        },
     }
     print(json.dumps(output, indent=2, ensure_ascii=False) if args.json else str(path))
     return 0
@@ -106,6 +195,10 @@ def build_parser() -> argparse.ArgumentParser:
     create.add_argument("--name")
     create.add_argument("--branch")
     create.add_argument("--path")
+    create.add_argument("--stage", default="clarify")
+    create.add_argument("--loop-count", type=int, default=2)
+    create.add_argument("--commit-mode", choices=["none", "phase", "final"], default="none")
+    create.add_argument("--no-start-run", action="store_true")
     create.add_argument("--json", action="store_true")
     create.set_defaults(func=command_create)
 

@@ -62,13 +62,22 @@ python3 .phaseharness/bin/phaseharness-state.py start-new --request "<request>" 
 
 This command validates the new run, parks the existing active run with `manual_pause`, clears this worktree's active slot, and creates the new active run. It only updates `.phaseharness` run state. It does not clean the working tree, reset files, or clear git staging. If file isolation is needed, use `start-new-in-worktree` instead.
 
-If the user chooses `start-new-in-worktree`, run:
+If the user chooses `start-new-in-worktree`, first confirm loop count and commit mode using the same defaults from step 5 when values are missing. Then run:
 
 ```bash
-python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --json
+python3 .phaseharness/bin/phaseharness-worktree.py create --request "<request>" --loop-count <count> --commit-mode <none|phase|final> --json
 ```
 
-Tell the user the worktree path, branch, and run id. Tell them to start a new Codex/Claude session in that worktree and use the returned run id with `phaseharness-state.py start --run-id <run-id>` when the run is created. Do not bind a second run to the current session.
+This creates the git worktree and also creates an unbound auto run under the new worktree's `.phaseharness/runs/<run-id>/`. It must not change the current worktree's active run.
+
+Tell the user the worktree path, harness path, branch, and run id. Tell them to start a new Codex/Claude session with cwd set to the returned harness path, then run:
+
+```bash
+python3 .phaseharness/bin/phaseharness-state.py resume --json
+python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
+```
+
+Do not run those handoff commands in the current session. The current session remains bound to the original worktree. Do not bind a second run to the current session and do not ask the user to repeat the original request.
 
 5. Before creating a new auto run, ask for:
 
@@ -128,7 +137,8 @@ python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-r
   - run/worktree name: `YYYYMMDD-HHMMSS-<task-slug>`
   - branch: `phaseharness/<name>`
   - path: `<repo-parent>/<repo-name>.worktrees/<name>`
-- Start the new run from a new session whose cwd is the new worktree.
+  - an unbound auto run under the new worktree's `.phaseharness/runs/<run-id>/`
+- Start a new session whose cwd is the returned harness path, run `resume`, then run `next`.
 
 ## Manual Skills
 
