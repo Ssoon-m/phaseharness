@@ -26,6 +26,7 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage cont
 - Do not paste full source files into the artifact.
 - If clarify was skipped, document why the requirement is clear enough to gather context.
 - Include file paths and the reason each path matters.
+- Do not decide phase count, phase boundaries, phase order, or whether work should be merged into a single phase. Those decisions belong only to `plan`.
 
 ## Configured Context
 
@@ -83,8 +84,6 @@ Write `.phaseharness/runs/<run-id>/artifacts/context.md`:
 ## Risks
 
 ## Validation Commands
-
-## Recommended Next Step
 ```
 
 When complete:

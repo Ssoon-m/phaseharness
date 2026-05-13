@@ -27,6 +27,8 @@ Read available artifacts from `.phaseharness/runs/<run-id>/artifacts/`, especial
 
 If an input is missing, proceed with explicit assumptions when possible and record the missing decision as a risk.
 
+Use `context.md` as factual input only. Ignore any context-gather wording that recommends phase count, phase names, split decisions, merge decisions, or implementation batching.
+
 ## Rules
 
 - Do not modify product code.
@@ -43,7 +45,7 @@ Split phases so each one can be implemented and reviewed independently with the 
 
 Prefer splitting by functional responsibility, failure boundary, validation boundary, and context size, not by screen name or file.
 
-Before writing phase files, list candidate functional responsibilities from the request and `context.md`, then decide whether each candidate should be its own phase or merged into another phase.
+Before writing phase files, list candidate functional responsibilities from the request and factual context in `context.md`, then decide whether each candidate should be its own phase or merged into another phase.
 
 Default to splitting when a candidate has its own failure mode, externally observable behavior, validation flow, target file ownership, long implementation time, or broad context needs.
 
