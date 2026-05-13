@@ -157,31 +157,30 @@ def install_codex_hooks(root: Path) -> list[Path]:
     return [config_path, hooks_path]
 
 
-def link_or_copy_skill(root: Path, skill_name: str, target: Path) -> Path:
+def copy_skill(root: Path, skill_name: str, target: Path) -> Path:
     source = root / ".phaseharness" / "skills" / skill_name
     if not source.exists():
         raise RuntimeError(f"missing skill: {source}")
     target.parent.mkdir(parents=True, exist_ok=True)
-    if target.exists() or target.is_symlink():
-        if target.is_symlink() and target.resolve() == source.resolve():
+    if target.is_symlink():
+        if target.resolve() == source.resolve():
+            target.unlink()
+        else:
             return target
-        if target.is_dir() and not target.is_symlink():
+    if target.exists():
+        if target.is_dir():
             shutil.copytree(source, target, dirs_exist_ok=True)
             return target
         return target
-    try:
-        rel_source = Path("..") / ".." / ".phaseharness" / "skills" / skill_name
-        target.symlink_to(rel_source, target_is_directory=True)
-    except OSError:
-        shutil.copytree(source, target)
+    shutil.copytree(source, target)
     return target
 
 
 def install_skill_bridges(root: Path) -> list[Path]:
     changed: list[Path] = []
     for skill_name in SKILLS:
-        changed.append(link_or_copy_skill(root, skill_name, root / ".claude" / "skills" / skill_name))
-        changed.append(link_or_copy_skill(root, skill_name, root / ".agents" / "skills" / skill_name))
+        changed.append(copy_skill(root, skill_name, root / ".claude" / "skills" / skill_name))
+        changed.append(copy_skill(root, skill_name, root / ".agents" / "skills" / skill_name))
     return changed
 
 
