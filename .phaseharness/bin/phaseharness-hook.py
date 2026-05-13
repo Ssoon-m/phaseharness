@@ -23,6 +23,8 @@ SESSION_ENV_KEYS = {
     "claude": ["CLAUDE_SESSION_ID", "CLAUDE_CODE_SESSION_ID"],
     "codex": ["CODEX_THREAD_ID", "CODEX_SESSION_ID"],
 }
+HOOK_TIMEOUT_ENV = "PHASEHARNESS_HOOK_TIMEOUT_SECONDS"
+DEFAULT_HOOK_TIMEOUT_SECONDS = 25.0
 
 
 def find_project_root(input_data: dict[str, object], root_arg: str | None = None) -> Path | None:
@@ -42,6 +44,25 @@ def clean_optional(value: object | None) -> str | None:
         return None
     text = str(value).strip()
     return text or None
+
+
+def positive_float(value: str) -> float:
+    parsed = float(value)
+    if parsed <= 0:
+        raise argparse.ArgumentTypeError("must be positive")
+    return parsed
+
+
+def hook_timeout_seconds(explicit: float | None = None) -> float:
+    if explicit is not None:
+        return explicit
+    value = clean_optional(os.environ.get(HOOK_TIMEOUT_ENV))
+    if value is None:
+        return DEFAULT_HOOK_TIMEOUT_SECONDS
+    try:
+        return positive_float(value)
+    except (argparse.ArgumentTypeError, ValueError) as exc:
+        raise ValueError(f"{HOOK_TIMEOUT_ENV} must be a positive number") from exc
 
 
 def session_id_for(runtime: str, input_data: dict[str, object]) -> str | None:
@@ -180,9 +201,11 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Provider Stop hook wrapper for phaseharness.")
     parser.add_argument("--runtime", choices=["claude", "codex"], default="claude")
     parser.add_argument("--root")
+    parser.add_argument("--timeout-seconds", type=positive_float)
     args = parser.parse_args()
 
     try:
+        timeout_seconds = hook_timeout_seconds(args.timeout_seconds)
         raw = sys.stdin.read()
         input_data = json.loads(raw) if raw.strip() else {}
         root = find_project_root(input_data, args.root)
@@ -193,24 +216,36 @@ def main() -> int:
             write_log(root, args.runtime, session_id, input_data, {"action": "none", "reason": "session id unavailable"})
             return no_op(args.runtime)
         runner = root / ".phaseharness" / "bin" / "phaseharness-state.py"
-        result = subprocess.run(
-            [
-                "python3",
-                str(runner),
-                "next",
-                "--require-auto",
-                "--reprompt-running",
-                "--require-session-binding",
-                "--provider",
-                args.runtime,
-                "--session-id",
-                session_id,
-                "--json",
-            ],
-            cwd=str(root),
-            text=True,
-            capture_output=True,
-        )
+        try:
+            result = subprocess.run(
+                [
+                    "python3",
+                    str(runner),
+                    "next",
+                    "--require-auto",
+                    "--reprompt-running",
+                    "--require-session-binding",
+                    "--provider",
+                    args.runtime,
+                    "--session-id",
+                    session_id,
+                    "--json",
+                ],
+                cwd=str(root),
+                text=True,
+                capture_output=True,
+                timeout=timeout_seconds,
+            )
+        except subprocess.TimeoutExpired:
+            log_result = {
+                "action": "none",
+                "error": (
+                    f"phaseharness next timed out after {timeout_seconds:g}s: "
+                    f"runner={runner} root={root} runtime={args.runtime} session_id={session_id}"
+                ),
+            }
+            write_log(root, args.runtime, session_id, input_data, log_result)
+            return no_op(args.runtime, f"phaseharness hook error: {log_result['error']}")
         if result.returncode != 0:
             output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part).strip()
             log_result = {"action": "none", "error": output or f"phaseharness next failed: {result.returncode}"}
