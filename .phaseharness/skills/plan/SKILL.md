@@ -43,11 +43,17 @@ Use `context.md` as factual input only. Ignore any context-gather wording that r
 
 Split phases so each one can be implemented and reviewed independently with the smallest practical context.
 
-Prefer splitting by functional responsibility, failure boundary, validation boundary, and context size, not by screen name or file.
+Use failure boundary, validation boundary, and context size as supporting split criteria. Do not split by file alone.
 
 Before writing phase files, list candidate functional responsibilities from the request and factual context in `context.md`, then decide whether each candidate should be its own phase or merged into another phase.
 
-Default to splitting when a candidate has its own failure mode, externally observable behavior, validation flow, target file ownership, long implementation time, or broad context needs.
+Default to splitting when a candidate has its own failure mode, externally observable behavior, contract, state model, validation concerns, target file ownership, long implementation time, or broad context needs.
+
+Functional responsibility is the primary boundary:
+
+- Split phases when responsibilities are different.
+- Do not merge responsibilities just because they are connected in one workflow or can be checked together in final `evaluate`.
+- Each phase should be verifiable within its own responsibility while keeping the repository coherent; full workflow verification belongs in `evaluate`.
 
 Good reasons to create a separate phase:
 
@@ -62,6 +68,7 @@ Good reasons to create a separate phase:
 Split before writing phase files if:
 
 - one phase would cover multiple independent functional responsibilities
+- one phase would cover multiple independent contracts, state models, or failure boundaries
 - one phase would require broad context from unrelated parts of the repository
 - one phase would likely take a long time to implement or review
 - one phase mixes changes with different failure modes
@@ -87,7 +94,7 @@ Each phase should state:
 - exact validation commands and expected outcomes
 - stop conditions when the worker should return `error` instead of guessing
 
-Merge candidates only when they share one workflow, one validation path, and a small target file set. Explain non-obvious merges in `artifacts/plan.md`.
+Merge candidates only when they are the same kind of functional work and can be implemented, reviewed, and verified as one responsibility. Explain non-obvious merges in `artifacts/plan.md`.
 
 ## Outputs
 
