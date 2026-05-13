@@ -1143,7 +1143,10 @@ def command_resume(args: argparse.Namespace) -> int:
     save_run(root, state)
     if state.get("mode") == "auto" and state.get("status") in ("active", "waiting_user"):
         set_active(root, state)
-    print(json.dumps({"run_id": state["run_id"], "status": state["status"]}, ensure_ascii=False))
+    if args.json:
+        print(json.dumps({"run_id": state["run_id"], "status": state["status"]}, ensure_ascii=False))
+    else:
+        print(state["status"])
     return 0
 
 
