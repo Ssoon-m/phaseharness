@@ -6,6 +6,9 @@ from pathlib import Path
 from typing import Any
 
 
+CONFIG_WARNING_KEY = "__phaseharness_context_warning"
+
+
 def find_project_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
     while current != current.parent:
@@ -19,7 +22,10 @@ def load_config(root: Path) -> dict[str, Any] | None:
     path = root / ".phaseharness" / "context.json"
     if not path.exists():
         return None
-    data = json.loads(path.read_text())
+    try:
+        data = json.loads(path.read_text())
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+        return {CONFIG_WARNING_KEY: f"could not read .phaseharness/context.json: {exc}"}
     if not isinstance(data, dict):
         raise RuntimeError(".phaseharness/context.json must be a JSON object")
     return data
@@ -85,6 +91,10 @@ def main() -> int:
     print()
     if config is None:
         print("No active `.phaseharness/context.json`.")
+        return 0
+    warning = config.get(CONFIG_WARNING_KEY)
+    if isinstance(warning, str):
+        print(f"Warning: {warning}")
         return 0
     docs = config.get("context-gather", {}).get("documents", [])
     if not isinstance(docs, list) or not docs:
