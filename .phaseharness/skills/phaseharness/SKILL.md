@@ -10,7 +10,7 @@ Phaseharness runs a large repository task from durable file state under `.phaseh
 Workflow:
 
 ```text
-clarify -> context_gather -> plan -> generate -> evaluate
+clarify -> context-gather -> plan -> generate -> evaluate
 ```
 
 ## Start Or Resume

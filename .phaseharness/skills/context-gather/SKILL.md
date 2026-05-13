@@ -1,6 +1,6 @@
 ---
 name: context-gather
-description: Use when the user explicitly invokes context-gather, or when a phaseharness continuation asks for the context_gather stage. Collects repository facts, relevant files, patterns, constraints, risks, docs, and validation commands without product code edits.
+description: Use when the user explicitly invokes context-gather, or when a phaseharness continuation asks for the context-gather stage. Collects repository facts, relevant files, patterns, constraints, risks, docs, and validation commands without product code edits.
 ---
 
 # Context Gather
