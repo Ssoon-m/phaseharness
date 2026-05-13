@@ -126,7 +126,13 @@ def state_summary(root: Path) -> dict[str, Any]:
     return summary
 
 
-def write_log(root: Path, runtime: str, input_data: dict[str, object], result: dict[str, Any]) -> None:
+def write_log(
+    root: Path,
+    runtime: str,
+    session_id: str | None,
+    input_data: dict[str, object],
+    result: dict[str, Any],
+) -> None:
     try:
         log_dir = root / ".phaseharness" / "state" / "logs"
         log_dir.mkdir(parents=True, exist_ok=True)
@@ -136,7 +142,7 @@ def write_log(root: Path, runtime: str, input_data: dict[str, object], result: d
             "runtime": runtime,
             "root": str(root),
             "hook_event_name": input_data.get("hook_event_name"),
-            "session_id": input_data.get("session_id"),
+            "session_id": session_id,
             "turn_id": input_data.get("turn_id"),
             "cwd": input_data.get("cwd"),
             "stop_hook_active": input_data.get("stop_hook_active"),
@@ -184,7 +190,7 @@ def main() -> int:
             return no_op(args.runtime)
         session_id = session_id_for(args.runtime, input_data)
         if not session_id:
-            write_log(root, args.runtime, input_data, {"action": "none", "reason": "session id unavailable"})
+            write_log(root, args.runtime, session_id, input_data, {"action": "none", "reason": "session id unavailable"})
             return no_op(args.runtime)
         runner = root / ".phaseharness" / "bin" / "phaseharness-state.py"
         result = subprocess.run(
@@ -208,17 +214,17 @@ def main() -> int:
         if result.returncode != 0:
             output = "\n".join(part for part in (result.stdout.strip(), result.stderr.strip()) if part).strip()
             log_result = {"action": "none", "error": output or f"phaseharness next failed: {result.returncode}"}
-            write_log(root, args.runtime, input_data, log_result)
+            write_log(root, args.runtime, session_id, input_data, log_result)
             return no_op(args.runtime, f"phaseharness hook error: {log_result['error']}")
         try:
             payload = json.loads(result.stdout or "{}")
         except json.JSONDecodeError as exc:
             log_result = {"action": "none", "error": f"invalid phaseharness next output: {exc}"}
-            write_log(root, args.runtime, input_data, log_result)
+            write_log(root, args.runtime, session_id, input_data, log_result)
             return no_op(args.runtime, f"phaseharness hook error: {log_result['error']}")
         if not isinstance(payload, dict):
             payload = {"action": "none", "error": "invalid phaseharness next payload"}
-        write_log(root, args.runtime, input_data, payload)
+        write_log(root, args.runtime, session_id, input_data, payload)
         if payload.get("action") != "prompt":
             return no_op(args.runtime)
         return continuation(args.runtime, str(payload.get("prompt") or ""))
