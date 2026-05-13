@@ -182,9 +182,6 @@ def main() -> int:
         root = find_project_root(input_data, args.root)
         if root is None:
             return no_op(args.runtime)
-        if input_data.get("stop_hook_active"):
-            write_log(root, args.runtime, input_data, {"action": "none", "reason": "stop hook already active"})
-            return no_op(args.runtime)
         session_id = session_id_for(args.runtime, input_data)
         if not session_id:
             write_log(root, args.runtime, input_data, {"action": "none", "reason": "session id unavailable"})
