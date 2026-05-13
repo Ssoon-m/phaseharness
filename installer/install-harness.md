@@ -116,8 +116,8 @@ python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
 python3 .phaseharness/bin/phaseharness-worktree.py --help
-python3 .phaseharness/skills/context-gather/scripts/render-context-config.py
-python3 .phaseharness/skills/evaluate/scripts/render-evaluation-config.py
+python3 "$(git rev-parse --show-toplevel)/.phaseharness/skills/context-gather/scripts/render-context-config.py"
+python3 "$(git rev-parse --show-toplevel)/.phaseharness/skills/evaluate/scripts/render-evaluation-config.py"
 python3 -m py_compile .phaseharness/bin/*.py
 python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```

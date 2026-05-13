@@ -72,7 +72,7 @@ def main() -> int:
     parser.add_argument("--run-id", default="", help="Optional run id used to replace <run-id> in configured rules.")
     args = parser.parse_args()
 
-    root = find_project_root()
+    root = find_project_root(Path(__file__).parent)
     config = load_config(root)
     print("# Evaluation Config")
     print()

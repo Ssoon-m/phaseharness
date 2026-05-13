@@ -34,7 +34,7 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage eval
 Before creating the reviewer request, run:
 
 ```bash
-python3 .phaseharness/skills/evaluate/scripts/render-evaluation-config.py --run-id <run-id>
+python3 "$(git rev-parse --show-toplevel)/.phaseharness/skills/evaluate/scripts/render-evaluation-config.py" --run-id <run-id>
 ```
 
 If no run id is available, omit `--run-id`. Use the rendered output as the rendered evaluation config.

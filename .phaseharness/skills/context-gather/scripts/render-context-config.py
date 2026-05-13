@@ -67,7 +67,7 @@ def render_doc(root: Path, item: Any) -> list[str]:
 
 
 def main() -> int:
-    root = find_project_root()
+    root = find_project_root(Path(__file__).parent)
     config = load_config(root)
     print("# Context-Gather Config")
     print()

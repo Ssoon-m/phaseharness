@@ -32,7 +32,7 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage cont
 Before broad repository inspection, run:
 
 ```bash
-python3 .phaseharness/skills/context-gather/scripts/render-context-config.py
+python3 "$(git rev-parse --show-toplevel)/.phaseharness/skills/context-gather/scripts/render-context-config.py"
 ```
 
 Use the rendered output as the rendered context config.
