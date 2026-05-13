@@ -46,6 +46,14 @@ Pass the subagent:
 - Do not change run lifecycle state from the subagent.
 - If auto `commit_mode` is `phase` or `final`, wait for the state runner commit prompt. Do not commit here.
 
+## Verification Boundary
+
+- Do not call, simulate, or perform the `evaluate` stage from `generate`.
+- Run only minimal phase-scoped checks needed to avoid handing off obviously broken work.
+- Prefer fast checks tied directly to changed files or explicitly required by the phase.
+- Do not run broad repository-wide review or exhaustive validation unless the phase file explicitly requires it for generation.
+- Record any skipped expensive validation commands in the artifact for `evaluate` to consider.
+
 ## Artifact
 
 Append to `.phaseharness/runs/<run-id>/artifacts/generate.md`:

@@ -45,6 +45,22 @@ agent에게 workflow skill 사용을 요청합니다.
 Use `phaseharness` to implement <task>.
 ```
 
+## 프로젝트 context 설정
+
+설치 후 `.phaseharness/context.example.json`을 참고해 `.phaseharness/context.json`을 만들면 project-specific context를 활성화할 수 있습니다. example 파일은 문서용이며 active config로 사용하지 않습니다.
+
+```bash
+cp .phaseharness/context.example.json .phaseharness/context.json
+```
+
+`context-gather.documents`에는 구현 계획에 영향을 주는 문서를 적고, `evaluate.documents`에는 코드 평가 기준으로 삼을 문서를 적습니다. `evaluate.rules`에는 evaluate reviewer에게 직접 주입할 평가 규칙을 문자열 목록으로 적을 수 있습니다.
+
+`priority` 값은 아래 셋 중 하나입니다.
+
+- `required`: 관련성을 반드시 확인합니다. 관련 있는데 누락, unreadable, 충돌이 있으면 risk로 기록합니다.
+- `recommended`: 요청과 관련 있을 때 고려합니다.
+- `optional`: 명확히 관련 있을 때만 사용합니다.
+
 run을 만들기 전에 `phaseharness`는 먼저 현재 worktree에 active run이 있는지 확인합니다. active run이 있으면 아래 중 하나를 선택하게 합니다.
 
 - `resume`: 기존 active run을 현재 session에 바인딩하고 이어갑니다.

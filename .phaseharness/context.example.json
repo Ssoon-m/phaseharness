@@ -1,0 +1,41 @@
+{
+  "$schema": "./context.schema.json",
+  "schema_version": 1,
+  "context-gather": {
+    "documents": [
+      {
+        "path": "ARCHITECTURE.md",
+        "description": "Architecture boundaries, module ownership, dependency direction, and system shape that may affect implementation planning.",
+        "priority": "required"
+      },
+      {
+        "path": "CODING_CONVENTION.md",
+        "description": "Coding style, naming, error handling, and test style rules relevant to changed files.",
+        "priority": "required"
+      },
+      {
+        "glob": "docs/**/*.md",
+        "description": "Additional project documentation to consider only when it is relevant to the requested change.",
+        "priority": "recommended"
+      }
+    ]
+  },
+  "evaluate": {
+    "documents": [
+      {
+        "path": "CODING_CONVENTION.md",
+        "description": "Repository-wide coding conventions that every diff should satisfy.",
+        "priority": "required"
+      },
+      {
+        "path": "CONTRIBUTING.md",
+        "description": "Repository-wide contribution expectations to use as baseline review guidance.",
+        "priority": "recommended"
+      }
+    ],
+    "rules": [
+      "If the diff affects UI alignment, line wrapping, overlap, input grouping, or responsive stability, read `ai/UI_DEBUGGING.md` and verify the affected browser rendering.",
+      "When browser rendering is verified, create `.phaseharness/runs/<run-id>/outputs/` and save screenshots for each affected route and viewport that was checked."
+    ]
+  }
+}

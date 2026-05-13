@@ -5,9 +5,9 @@ description: Use when the user explicitly invokes evaluate, or when a phaseharne
 
 # Evaluate
 
-Evaluate verifies the current diff against the run contract. By default, it does not modify product code.
+Evaluate verifies the current diff and records `pass`, `warn`, or `fail`. It does not modify product code.
 
-## Controller Rules
+## Run State
 
 - If `evaluate` is run directly without a run id, create a manual run:
 
@@ -16,6 +16,9 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage eval
 ```
 
 - Manual runs stop after this stage. Do not call `next`.
+
+## Delegation Rules
+
 - Standalone `evaluate` and auto phaseharness runs both use one fresh reviewer subagent.
 - A `phaseharness` continuation prompt counts as explicit authorization to use that subagent for this stage.
 - The main session remains the controller.
@@ -26,18 +29,47 @@ python3 .phaseharness/bin/phaseharness-state.py start --mode manual --stage eval
 - The main session reviews the reviewer result, writes the artifact, updates state, and closes or releases the subagent session if the provider supports it.
 - If the provider has no explicit close or release action, the main session must treat the reviewer subagent's final response as terminal and send no further work to it.
 
-## Reviewer Context Pack
+## Inputs
 
-Pass the reviewer:
+Before creating the reviewer request, run:
 
-- `run_id`
-- `clarify.md` excerpts: `Request`, `Goal`, `Success Criteria`, `User Decisions`
-- `context.md` excerpts: `Referenced Documents`, `Constraints`, `Risks`, `Validation Commands`
-- `plan.md` and `phases/*.md` excerpts: `Target Files`, `Acceptance Criteria`, `Validation Commands`
-- completed phase list
-- current diff summary or necessary diff text
-- validation commands to run
-- expected output: `pass | warn | fail`, findings, evidence, follow-up phase suggestions, then stop
+```bash
+python3 .phaseharness/skills/evaluate/scripts/render-evaluation-config.py --run-id <run-id>
+```
+
+If no run id is available, omit `--run-id`. Use the rendered output as the rendered evaluation config.
+
+Document lines use `source` `(kind, priority, status)`: description. Status describes path/glob availability, not whether the guidance applies to the current diff.
+
+For a phaseharness run, pass the reviewer relevant excerpts from `clarify.md`, `context.md`, `plan.md`, and `phases/*.md`, plus completed phases, current diff, validation commands, and the rendered evaluation config.
+
+For standalone evaluate, do not fail only because phaseharness planning artifacts are missing. Build the review from the user's request, current diff and changed files, relevant repository patterns, discoverable validation commands, and the rendered evaluation config. Record missing artifacts as a risk only when they prevent a confident verdict.
+
+## Review Criteria
+
+Check the diff against:
+
+- `clarify.md` success criteria
+- `context.md` referenced documents, constraints, risks, and validation commands
+- `plan.md` validation strategy
+- `phases/*.md` acceptance criteria, boundaries, and validation commands
+- rendered evaluation config
+
+For every document line in the rendered evaluation config, record exactly one outcome:
+
+- If relevant to the diff, record the concrete criterion under `Evaluation Checks`.
+- If not relevant, record it under `Evaluation Checks` with `result: skipped`.
+- If unavailable (`missing`, `no_matches`, `not_a_file`, `unreadable`, or `invalid`), record it under `Risks`.
+
+Apply rule lines from the rendered evaluation config only when relevant or unconditional, and record outcomes under `Evaluation Checks`. The rendered evaluation config supplements run artifacts; it does not replace them and must not cause product code edits.
+
+Priority semantics:
+
+- A violated `required` evaluation criterion should usually be `fail`.
+- A missing or partially satisfied `recommended` evaluation criterion should usually be `warn`.
+- `optional` evaluation criteria should not affect the verdict unless they expose a concrete risk.
+
+If the plan or phase files define validation commands, use those as the source of truth. Do not require extra commands from config.
 
 ## Verdicts
 
@@ -60,9 +92,16 @@ Write `.phaseharness/runs/<run-id>/artifacts/evaluate.md`:
 
 ## Findings
 
-## Evidence
+## Evaluation Checks
+
+- source:
+- requirement:
+- result: pass | warn | fail | skipped
+- evidence:
 
 ## Validation
+
+## Risks
 
 ## Follow-Up Phases
 ```

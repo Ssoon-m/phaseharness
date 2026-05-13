@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://phaseharness.dev/schemas/context.schema.json",
+  "title": "Phaseharness Context Config",
+  "description": "Optional project-specific context configuration. Copy context.example.json to context.json to activate it.",
+  "type": "object",
+  "additionalProperties": false,
+  "properties": {
+    "$schema": {
+      "type": "string",
+      "description": "Optional JSON Schema reference for editor validation."
+    },
+    "schema_version": {
+      "const": 1
+    },
+    "context-gather": {
+      "$ref": "#/$defs/stage_config",
+      "description": "Documents used by context-gather to extract task-relevant implementation context."
+    },
+    "evaluate": {
+      "$ref": "#/$defs/evaluate_config",
+      "description": "Documents used by evaluate as code review guidance."
+    }
+  },
+  "required": ["schema_version"],
+  "$defs": {
+    "priority": {
+      "type": "string",
+      "enum": ["required", "recommended", "optional"],
+      "description": "required must be checked for relevance; recommended should be considered when relevant; optional is used only when clearly relevant."
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Repository-relative path to a single document."
+        },
+        "glob": {
+          "type": "string",
+          "description": "Repository-relative glob for a group of documents."
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What this document should contribute to the stage."
+        },
+        "priority": {
+          "$ref": "#/$defs/priority"
+        }
+      },
+      "required": ["description", "priority"],
+      "oneOf": [
+        {
+          "required": ["path"]
+        },
+        {
+          "required": ["glob"]
+        }
+      ]
+    },
+    "stage_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/document"
+          },
+          "default": []
+        }
+      }
+    },
+    "evaluate_config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/document"
+          },
+          "default": []
+        },
+        "rules": {
+          "type": "array",
+          "description": "Additional code review instructions to inject into evaluate. These are evaluation guidance, not phase-specific acceptance criteria.",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    }
+  }
+}

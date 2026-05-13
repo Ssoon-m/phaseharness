@@ -40,8 +40,12 @@ test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-state.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-hook.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-sync-bridges.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-worktree.py"
+test -f "$HARNESS_SOURCE/.phaseharness/context.example.json"
+test -f "$HARNESS_SOURCE/.phaseharness/context.schema.json"
 test -f "$HARNESS_SOURCE/.phaseharness/skills/phaseharness/SKILL.md"
 test -f "$HARNESS_SOURCE/.phaseharness/skills/commit/SKILL.md"
+test -f "$HARNESS_SOURCE/.phaseharness/skills/context-gather/scripts/render-context-config.py"
+test -f "$HARNESS_SOURCE/.phaseharness/skills/evaluate/scripts/render-evaluation-config.py"
 ```
 
 If `HARNESS_SOURCE` is not set:
@@ -81,6 +85,20 @@ This creates or updates:
 
 Subagents are not predeclared. The `generate` and `evaluate` skills create fresh subagent requests when those stages run.
 
+## Optional Project Context Config
+
+`.phaseharness/context.example.json` and `.phaseharness/context.schema.json` are installed as documentation for project-specific context.
+
+To activate project-specific context, copy the example to `.phaseharness/context.json` and edit it for the target repository:
+
+```bash
+cp .phaseharness/context.example.json .phaseharness/context.json
+```
+
+The example file is not active configuration. `context-gather` and `evaluate` read `.phaseharness/context.json` only when that file exists.
+
+The active config supports `context-gather.documents`, `evaluate.documents`, and `evaluate.rules`.
+
 ## When The Stop Hook Runs
 
 The installed Stop hook is inert for normal questions. It only calls:
@@ -98,6 +116,8 @@ python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
 python3 .phaseharness/bin/phaseharness-worktree.py --help
+python3 .phaseharness/skills/context-gather/scripts/render-context-config.py
+python3 .phaseharness/skills/evaluate/scripts/render-evaluation-config.py
 python3 -m py_compile .phaseharness/bin/*.py
 python3 .phaseharness/bin/phaseharness-state.py next --require-auto --reprompt-running --require-session-binding --json
 ```

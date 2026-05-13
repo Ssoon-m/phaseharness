@@ -45,6 +45,22 @@ Ask the agent to use the workflow skill:
 Use `phaseharness` to implement <task>.
 ```
 
+## Project Context Config
+
+After installation, copy `.phaseharness/context.example.json` to `.phaseharness/context.json` to enable project-specific context. The example file is documentation only and is not used as active configuration.
+
+```bash
+cp .phaseharness/context.example.json .phaseharness/context.json
+```
+
+Use `context-gather.documents` for documents that affect implementation planning. Use `evaluate.documents` for documents that should guide code evaluation. Use `evaluate.rules` for evaluation rules that should be injected directly into the reviewer prompt.
+
+Supported `priority` values:
+
+- `required`: must be checked for relevance. Relevant missing, unreadable, or conflicting guidance is recorded as risk.
+- `recommended`: considered when relevant to the request.
+- `optional`: used only when clearly relevant.
+
 Before creating a run, `phaseharness` first checks whether this worktree already has an active run. If it does, it asks you to choose:
 
 - `resume`: bind the existing active run to the current session and continue it
