@@ -39,17 +39,34 @@ If an input is missing, proceed with explicit assumptions when possible and reco
 
 ## Phase Splitting Guidelines
 
-Split phases so each one can be implemented and reviewed independently.
+Split phases so each one can be implemented and reviewed independently with the smallest practical context.
+
+Prefer splitting by functional responsibility, failure boundary, validation boundary, and context size, not by screen name or file.
+
+Before writing phase files, list candidate functional responsibilities from the request and `context.md`, then decide whether each candidate should be its own phase or merged into another phase.
+
+Default to splitting when a candidate has its own failure mode, externally observable behavior, validation flow, target file ownership, long implementation time, or broad context needs.
 
 Good reasons to create a separate phase:
 
-- A user-visible feature or behavior can be completed and validated on its own.
+- An externally observable feature or behavior can be completed and validated on its own.
 - The work is likely to take a long time or touch many files.
-- The work has a distinct risk profile, such as data migration, state handling, UI behavior, external integration, or test infrastructure.
+- The work has a distinct risk profile, such as data migration, state handling, external integration, hardware/runtime behavior, or test infrastructure.
 - Different phases have different validation commands or acceptance criteria.
 - One phase can reduce uncertainty for later phases, such as adding a parser, adapter, or test harness before broader behavior changes.
 - File ownership or allowed changes would otherwise become too broad for a fresh implementer to follow safely.
 - A contract change, such as a type, API, schema, prop, or data shape, must be reviewed before downstream behavior changes.
+
+Split before writing phase files if:
+
+- one phase would cover multiple independent functional responsibilities
+- one phase would require broad context from unrelated parts of the repository
+- one phase would likely take a long time to implement or review
+- one phase mixes changes with different failure modes
+- one phase mixes changes with different validation methods
+- one phase changes shared/common behavior and responsibility-specific behavior together
+- one phase has a broad target file set that makes failure attribution difficult
+- one phase requires multiple independent design decisions or assumptions
 
 Avoid phase splits that are only mechanical:
 
@@ -60,7 +77,7 @@ Avoid phase splits that are only mechanical:
 
 Each phase should state:
 
-- the feature or behavior slice it owns
+- the functional responsibility it owns
 - the exact target files or directories
 - what must not be changed
 - how a reviewer can verify the phase without reading chat history
@@ -68,9 +85,13 @@ Each phase should state:
 - exact validation commands and expected outcomes
 - stop conditions when the worker should return `error` instead of guessing
 
+Merge candidates only when they share one workflow, one validation path, and a small target file set. Explain non-obvious merges in `artifacts/plan.md`.
+
 ## Outputs
 
 Write `.phaseharness/runs/<run-id>/artifacts/plan.md` with the phase breakdown, rationale, dependency order, and validation strategy.
+
+Include a short `Phase Split Review` in `artifacts/plan.md` explaining the selected phase boundaries and any non-obvious merges.
 
 Create one or more phase files under `.phaseharness/runs/<run-id>/phases/` using `phase-001.md`, `phase-002.md`, and so on.
 
