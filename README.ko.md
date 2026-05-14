@@ -153,3 +153,13 @@ Use `evaluate` for the current diff.
 - 구현 계획과 phase 분리만 받고 싶다면 `plan`을 사용합니다.
 - 구현은 끝났고 현재 diff를 검토하고 싶다면 `evaluate`를 사용합니다.
 - 단, `generate`는 일반 구현 요청에 단독으로 사용하지 않습니다. `plan`으로 나눈 phase 파일이 있을 때, 특정 phase 하나를 구현하는 용도로 사용합니다.
+
+## 업데이트
+
+Phaseharness 업데이트는 대부분 SessionStart 시 자동으로 처리됩니다.
+
+업데이트는 `.phaseharness/manifest.json`에 기록된 Phaseharness 관리 파일에만 적용되며, 로컬에서 수정된 파일은 자동으로 덮어쓰지 않고 건너뜁니다.
+
+Phaseharness 관리 파일을 프로젝트에 맞게 커스터마이즈한 경우, 해당 파일은 업데이트 대상에서 제외됩니다. 이때 SessionStart는 skipped 파일 목록을 출력하고, Phaseharness 새 버전으로 덮어쓸지 사용자 결정을 요청합니다.
+
+프로젝트에서 SessionStart 자동 업데이트를 끄려면 `.phaseharness/settings.example.json`을 `.phaseharness/settings.json`으로 복사한 뒤 `update.enabled`를 `false`로 설정하세요.

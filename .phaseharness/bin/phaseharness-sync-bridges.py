@@ -11,6 +11,10 @@ from typing import Any
 
 
 SKILLS = ["clarify", "context-gather", "plan", "generate", "evaluate", "commit", "phaseharness"]
+SKILL_ROOTS = [
+    Path(".claude") / "skills",
+    Path(".agents") / "skills",
+]
 HOOK_MARKER = ".phaseharness"
 
 
@@ -157,8 +161,27 @@ def install_codex_hooks(root: Path) -> list[Path]:
     return [config_path, hooks_path]
 
 
-def copy_skill(root: Path, skill_name: str, target: Path) -> Path:
-    source = root / ".phaseharness" / "skills" / skill_name
+def discover_skill_dirs(root: Path) -> list[Path]:
+    skills_root = root / ".phaseharness" / "skills"
+    seen: set[str] = set()
+    skill_dirs: list[Path] = []
+    for skill_name in SKILLS:
+        source = skills_root / skill_name
+        if not source.exists():
+            raise RuntimeError(f"missing skill: {source}")
+        if not (source / "SKILL.md").is_file():
+            raise RuntimeError(f"missing skill entrypoint: {source / 'SKILL.md'}")
+        skill_dirs.append(source)
+        seen.add(skill_name)
+    for source in sorted(path for path in skills_root.iterdir() if path.is_dir()):
+        if source.name in seen:
+            continue
+        if (source / "SKILL.md").is_file():
+            skill_dirs.append(source)
+    return skill_dirs
+
+
+def copy_skill(source: Path, target: Path) -> Path:
     if not source.exists():
         raise RuntimeError(f"missing skill: {source}")
     target.parent.mkdir(parents=True, exist_ok=True)
@@ -178,9 +201,9 @@ def copy_skill(root: Path, skill_name: str, target: Path) -> Path:
 
 def install_skill_bridges(root: Path) -> list[Path]:
     changed: list[Path] = []
-    for skill_name in SKILLS:
-        changed.append(copy_skill(root, skill_name, root / ".claude" / "skills" / skill_name))
-        changed.append(copy_skill(root, skill_name, root / ".agents" / "skills" / skill_name))
+    for source in discover_skill_dirs(root):
+        for skill_root in SKILL_ROOTS:
+            changed.append(copy_skill(source, root / skill_root / source.name))
     return changed
 
 

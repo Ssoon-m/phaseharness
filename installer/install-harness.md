@@ -41,7 +41,10 @@ test -d "$HARNESS_SOURCE/.phaseharness"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-state.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-hook.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-sync-bridges.py"
+test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-update.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-worktree.py"
+test -f "$HARNESS_SOURCE/.phaseharness/manifest.json"
+test -f "$HARNESS_SOURCE/.phaseharness/settings.example.json"
 test -f "$HARNESS_SOURCE/.phaseharness/context.example.json"
 test -f "$HARNESS_SOURCE/.phaseharness/context.schema.json"
 test -f "$HARNESS_SOURCE/.phaseharness/skills/phaseharness/SKILL.md"
@@ -81,6 +84,7 @@ This creates or updates:
 - `.codex/hooks.json` phaseharness `SessionStart` and `Stop` hook entries
 - `.claude/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
 - `.agents/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
+- `.phaseharness/bin/phaseharness-update.py` for safe SessionStart updates from managed file hashes
 - `.phaseharness/bin/phaseharness-worktree.py` for parallel worktree creation
 - `.phaseharness/state/active.json`
 - `.phaseharness/state/index.json`
@@ -90,6 +94,8 @@ Subagents are not predeclared. The `generate` and `evaluate` skills create fresh
 ## Project Context Config
 
 `.phaseharness/context.example.json` and `.phaseharness/context.schema.json` are installed as documentation for project-specific context.
+
+`.phaseharness/settings.example.json` documents project-owned Phaseharness settings. Copy it to `.phaseharness/settings.json` and set `update.enabled` to `false` when the project should not auto-update Phaseharness on SessionStart.
 
 After installing, ask the user to connect any existing project rule documents before the first real phaseharness run:
 
@@ -117,6 +123,7 @@ The hook may continue work only when `.phaseharness/state/active.json` points to
 python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
+python3 .phaseharness/bin/phaseharness-update.py check --source "$HARNESS_SOURCE" --quiet
 python3 .phaseharness/bin/phaseharness-worktree.py --help
 python3 "$(git rev-parse --show-toplevel)/.phaseharness/skills/context-gather/scripts/render-context-config.py"
 python3 "$(git rev-parse --show-toplevel)/.phaseharness/skills/evaluate/scripts/render-evaluation-config.py"

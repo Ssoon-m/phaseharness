@@ -152,3 +152,13 @@ Individual skills run only the requested stage once and then stop. Use `phasehar
 - Use `plan` when you only want an implementation plan and phase split.
 - Use `evaluate` when implementation is already done and you want the current diff reviewed.
 - Do not use `generate` by itself as a general implementation request. Use it only when there is a phase file produced by `plan`, and you want to implement one specific phase.
+
+## Updating
+
+Phaseharness updates are mostly handled automatically on SessionStart.
+
+Updates apply only to Phaseharness-managed files recorded in `.phaseharness/manifest.json`. Files with local edits are skipped instead of being overwritten automatically.
+
+If you customize Phaseharness-managed files for your project, those files can block part of an update. In that case, SessionStart prints the skipped files and asks whether to overwrite them with the new Phaseharness version.
+
+To disable automatic SessionStart updates for this project, copy `.phaseharness/settings.example.json` to `.phaseharness/settings.json`, then set `update.enabled` to `false`.
