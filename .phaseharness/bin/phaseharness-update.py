@@ -97,8 +97,21 @@ def managed_files(manifest: dict[str, Any], path: Path) -> dict[str, str]:
     for rel, digest in value.items():
         if not isinstance(rel, str) or not isinstance(digest, str):
             raise RuntimeError(f"manifest managed_files entries must be strings: {path}")
+        rel_path = Path(rel)
+        if rel_path.is_absolute() or ".." in rel_path.parts:
+            raise RuntimeError(f"manifest managed_files path must stay inside the project: {path}: {rel}")
         files[rel] = digest
     return files
+
+
+def resolve_inside_root(root: Path, rel: str) -> Path:
+    resolved_root = root.resolve()
+    resolved_path = (resolved_root / rel).resolve()
+    try:
+        resolved_path.relative_to(resolved_root)
+    except ValueError as exc:
+        raise RuntimeError(f"managed file path escapes project root: {rel}") from exc
+    return resolved_path
 
 
 def normalize_update_path(value: str) -> str:
@@ -233,7 +246,7 @@ def build_plan(root: Path, source: Path, overwrite: set[str] | None = None) -> t
 
 def copy_managed_file(source: Path, root: Path, rel: str) -> None:
     source_path = source / rel
-    target_path = root / rel
+    target_path = resolve_inside_root(root, rel)
     target_path.parent.mkdir(parents=True, exist_ok=True)
     if target_path.is_symlink():
         target_path.unlink()

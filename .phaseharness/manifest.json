@@ -7,7 +7,7 @@
     ".phaseharness/bin/phaseharness-hook.py": "sha256:845a4f0fedbb54954fd57c2e62acdf1d567e68468844983e636aac9750126da6",
     ".phaseharness/bin/phaseharness-state.py": "sha256:864b2e4b79bb7646ce50cb2b255a874d4842ea5af692a3c84e42947840efbf88",
     ".phaseharness/bin/phaseharness-sync-bridges.py": "sha256:b20f49124882523b387572bfc1120da98552bd4840126790d54e18c0e2901756",
-    ".phaseharness/bin/phaseharness-update.py": "sha256:32cee5b25d067e3372b21ce43c5ea464208af41d648df055cdeb2c2a81b45956",
+    ".phaseharness/bin/phaseharness-update.py": "sha256:7d8dcbe9b4060b424307b0ae75ab4f29fcb07777e385bd9b33115e31e7326d03",
     ".phaseharness/bin/phaseharness-worktree.py": "sha256:13098d7b80789792caf78e312a0634ef220a63ac23ff62aa00d5ca9c8f63cb4e",
     ".phaseharness/context.example.json": "sha256:1d7fb2781b4ef67fcaf4a28d60bd1ed6c79481e6df4804c45f3cdc61231caf69",
     ".phaseharness/context.schema.json": "sha256:ee9f587d2ea0fd9ebfac4ce591a7f8294b800e9138586207443730e698cf87c6",
