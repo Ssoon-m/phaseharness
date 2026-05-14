@@ -1,0 +1,13 @@
+#!/usr/bin/env sh
+set -eu
+
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+
+staged_phaseharness="$(git diff --cached --name-only -- .phaseharness)"
+if [ -z "$staged_phaseharness" ]; then
+  exit 0
+fi
+
+python3 scripts/phaseharness-refresh-manifest.py write --staged
+git add .phaseharness/manifest.json
