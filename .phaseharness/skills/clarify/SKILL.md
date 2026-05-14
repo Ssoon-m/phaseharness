@@ -1,6 +1,6 @@
 ---
 name: clarify
-description: Use when the user explicitly invokes clarify, or when a phaseharness continuation asks for the clarify stage. Turns a request into executable requirements, success criteria, scope, non-goals, decisions, assumptions, and open questions without implementation 2.
+description: Use when the user explicitly invokes clarify, or when a phaseharness continuation asks for the clarify stage. Turns a request into executable requirements, success criteria, scope, non-goals, decisions, assumptions, and open questions without implementation.
 ---
 
 # Clarify

@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "revision": "local",
   "managed_files": {
     ".phaseharness/.gitignore": "sha256:ad285b175bdc541436ccd201548fa3535f0a3f249f24980121b38c47af574ff9",
@@ -17,7 +17,7 @@
     ".phaseharness/hooks/codex-stop.sh": "sha256:e703e9371c1eaeb44320608dd0596dd946c5241c15d7f29ca20d1f1c59d9cbff",
     ".phaseharness/prompts/continuation.md": "sha256:16bace93a98ea31920666095c9b70ad2d3d3a986851116f389e3eb648b800410",
     ".phaseharness/settings.example.json": "sha256:e2610d3b69f944048c9fa98972a2b4d83b90cf50d13dc2d78f52e2b6375ce799",
-    ".phaseharness/skills/clarify/SKILL.md": "sha256:f053e2a27ade1a8b6793e9472eac8939068c9acee61cdc8914bc4c78c6087df9",
+    ".phaseharness/skills/clarify/SKILL.md": "sha256:535c16089e32bdb7d3b4d14333be07cd5f7b8b886eb0390fccf37a04e99aa016",
     ".phaseharness/skills/commit/SKILL.md": "sha256:3ea7edc89616188b91b667cd4bc0b16c9e6a49403dd8b3dbd9b92ffcd1064942",
     ".phaseharness/skills/context-gather/SKILL.md": "sha256:7acec446c4b50242fedf5a228895a12586ca6180892fd677cddfbee0063c952e",
     ".phaseharness/skills/context-gather/scripts/render-context-config.py": "sha256:c7373cbecb52bc131312e52d20af36f3d4aa3a15a8cd2800816130384a36a415",
