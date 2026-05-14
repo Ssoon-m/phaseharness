@@ -20,7 +20,7 @@
     ".phaseharness/skills/clarify/SKILL.md": "sha256:535c16089e32bdb7d3b4d14333be07cd5f7b8b886eb0390fccf37a04e99aa016",
     ".phaseharness/skills/commit/SKILL.md": "sha256:3ea7edc89616188b91b667cd4bc0b16c9e6a49403dd8b3dbd9b92ffcd1064942",
     ".phaseharness/skills/context-gather/SKILL.md": "sha256:7acec446c4b50242fedf5a228895a12586ca6180892fd677cddfbee0063c952e",
-    ".phaseharness/skills/context-gather/scripts/render-context-config.py": "sha256:c7373cbecb52bc131312e52d20af36f3d4aa3a15a8cd2800816130384a36a415",
+    ".phaseharness/skills/context-gather/scripts/render-context-config.py": "sha256:eebca77705682704c0a644e59741c18a6c1f04be7853627da08e30b099143049",
     ".phaseharness/skills/evaluate/SKILL.md": "sha256:a80eec9182ca478d4b52bfd9a1bc235cbe367ffa63fe29130b6546199d7de20a",
     ".phaseharness/skills/evaluate/scripts/render-evaluation-config.py": "sha256:46f6c056eaae220caf914ec1f726e64a73a7b0c4b5648dc1ee46fc72ab5bb7f9",
     ".phaseharness/skills/generate/SKILL.md": "sha256:14e27ba56db4ac75454212efbf08c951860288012620ca094da141b0f34cb5b9",

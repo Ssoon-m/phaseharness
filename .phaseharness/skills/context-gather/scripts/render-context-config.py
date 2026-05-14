@@ -96,7 +96,8 @@ def main() -> int:
     if isinstance(warning, str):
         print(f"Warning: {warning}")
         return 0
-    docs = config.get("context-gather", {}).get("documents", [])
+    context_gather = config.get("context-gather", {})
+    docs = context_gather.get("documents", []) if isinstance(context_gather, dict) else []
     if not isinstance(docs, list) or not docs:
         print("No configured context-gather documents.")
         return 0
