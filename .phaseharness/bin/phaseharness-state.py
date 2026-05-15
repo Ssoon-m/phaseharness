@@ -78,6 +78,23 @@ def now_iso() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
 
 
+def parse_iso(value: Any) -> datetime | None:
+    if not isinstance(value, str) or not value.strip():
+        return None
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        return None
+
+
+def elapsed_seconds(start: Any, end: Any) -> float | None:
+    started_at = parse_iso(start)
+    ended_at = parse_iso(end)
+    if started_at is None or ended_at is None:
+        return None
+    return max(0.0, round((ended_at - started_at).total_seconds(), 3))
+
+
 def find_project_root(start: Path | None = None) -> Path:
     current = (start or Path.cwd()).resolve()
     if current.is_file():
@@ -128,6 +145,10 @@ def run_path(root: Path, run_id: str) -> Path:
     return run_dir(root, run_id) / "run.json"
 
 
+def events_path(root: Path, run_id: str) -> Path:
+    return run_dir(root, run_id) / "events.jsonl"
+
+
 def load_json(path: Path, default: Any | None = None) -> Any:
     if not path.exists():
         if default is not None:
@@ -165,6 +186,23 @@ def ensure_state_files(root: Path) -> None:
 def save_json_if_missing(path: Path, data: Any) -> None:
     if not path.exists():
         save_json(path, data)
+
+
+def append_event(root: Path, state: dict[str, Any], event_type: str, **fields: Any) -> None:
+    timestamp = now_iso()
+    event = {
+        "time": timestamp,
+        "type": event_type,
+        "run_id": state.get("run_id"),
+        **{key: value for key, value in fields.items() if value is not None},
+    }
+    path = events_path(root, str(state["run_id"]))
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with path.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(event, ensure_ascii=False) + "\n")
+    metrics = state.setdefault("metrics", {})
+    metrics["last_event_at"] = timestamp
+    metrics["event_count"] = int(metrics.get("event_count", 0)) + 1
 
 
 def git(root: Path, *args: str) -> subprocess.CompletedProcess[str]:
@@ -381,6 +419,13 @@ def initial_run(
         },
         "evaluation": {"status": "pending"},
         "commits": {},
+        "metrics": {
+            "event_count": 0,
+            "stage_durations_seconds": {},
+            "phase_durations_seconds": {},
+            "post_evaluate_fixes": False,
+            "followup_phase_count": 0,
+        },
         "blocked_by": None,
         "inflight": None,
     }
@@ -493,6 +538,16 @@ def create_run(
         provider if mode == "auto" else None,
         session_id if mode == "auto" else None,
     )
+    append_event(
+        root,
+        state,
+        "run_started",
+        mode=mode,
+        stage=stage,
+        loop_current=state.get("loop", {}).get("current"),
+        loop_max=state.get("loop", {}).get("max"),
+        commit_mode=commit_mode,
+    )
     save_run(root, state)
     if mode == "auto":
         set_active(root, state)
@@ -545,12 +600,33 @@ def waiting_user_reason(state: dict[str, Any]) -> str | None:
 
 def set_stage_status(state: dict[str, Any], stage: str, status: str, message: str | None = None) -> None:
     stage_state = state.setdefault("stages", {}).setdefault(stage, {"artifact": ARTIFACTS[stage], "attempts": 0})
+    previous_status = stage_state.get("status")
+    timestamp = now_iso()
     stage_state["status"] = status
-    stage_state["updated_at"] = now_iso()
-    if status == "running" and "started_at" not in stage_state:
-        stage_state["started_at"] = now_iso()
-    if status == "completed":
-        stage_state["completed_at"] = now_iso()
+    stage_state["updated_at"] = timestamp
+    if status == "pending":
+        stage_state.pop("started_at", None)
+        stage_state.pop("completed_at", None)
+        stage_state.pop("failed_at", None)
+        stage_state.pop("duration_seconds", None)
+    elif status == "running":
+        if previous_status != "running":
+            stage_state["started_at"] = timestamp
+        stage_state.pop("completed_at", None)
+        stage_state.pop("failed_at", None)
+        stage_state.pop("duration_seconds", None)
+    elif status == "completed":
+        stage_state["completed_at"] = timestamp
+        duration = elapsed_seconds(stage_state.get("started_at"), timestamp)
+        if duration is not None:
+            stage_state["duration_seconds"] = duration
+            state.setdefault("metrics", {}).setdefault("stage_durations_seconds", {})[stage] = duration
+    elif status == "error":
+        stage_state["failed_at"] = timestamp
+        duration = elapsed_seconds(stage_state.get("started_at"), timestamp)
+        if duration is not None:
+            stage_state["duration_seconds"] = duration
+            state.setdefault("metrics", {}).setdefault("stage_durations_seconds", {})[stage] = duration
     if message:
         stage_state["message"] = message
 
@@ -605,8 +681,33 @@ def phase_file_path(root: Path, state: dict[str, Any], phase_id: str | None = No
 def set_generate_phase_status(state: dict[str, Any], phase_id: str, status: str, message: str | None = None) -> None:
     generate = state.setdefault("generate", {})
     statuses = generate.setdefault("phase_status", {})
+    previous_status = statuses.get(phase_id)
+    timestamp = now_iso()
     statuses[phase_id] = status
-    generate["updated_at"] = now_iso()
+    generate["updated_at"] = timestamp
+    timing = generate.setdefault("phase_timing", {}).setdefault(phase_id, {})
+    timing["status"] = status
+    timing["updated_at"] = timestamp
+    if status == "pending":
+        timing.pop("started_at", None)
+        timing.pop("completed_at", None)
+        timing.pop("failed_at", None)
+        timing.pop("duration_seconds", None)
+    if status == "running" and previous_status != "running":
+        timing["started_at"] = timestamp
+        timing.pop("completed_at", None)
+        timing.pop("failed_at", None)
+        timing.pop("duration_seconds", None)
+    if status in ("completed", "error", "failed"):
+        if status == "completed":
+            timing["completed_at"] = timestamp
+            timing.pop("failed_at", None)
+        else:
+            timing["failed_at"] = timestamp
+        duration = elapsed_seconds(timing.get("started_at"), timestamp)
+        if duration is not None:
+            timing["duration_seconds"] = duration
+            state.setdefault("metrics", {}).setdefault("phase_durations_seconds", {})[phase_id] = duration
     if status == "completed":
         completed = generate.setdefault("completed_phases", [])
         if phase_id not in completed:
@@ -695,6 +796,7 @@ def ensure_commit_prompt(root: Path, state: dict[str, Any], key: str, mode: str,
         "prompt": prompt,
         "updated_at": now_iso(),
     }
+    append_event(root, state, "commit_prompted", commit_key=key, mode=mode, implementation_phase=implementation_phase)
     return prompt
 
 
@@ -748,6 +850,15 @@ def start_top_level_stage(root: Path, state: dict[str, Any], stage: str, repromp
         "reprompt": reprompt,
         "updated_at": now_iso(),
     }
+    append_event(
+        root,
+        state,
+        "stage_reprompted" if reprompt else "stage_started",
+        stage=stage,
+        attempts=state.get("stages", {}).get(stage, {}).get("attempts"),
+        loop_current=state.get("loop", {}).get("current"),
+        loop_max=state.get("loop", {}).get("max"),
+    )
     save_run(root, state)
     set_active(root, state)
     return result_prompt(state, stage, build_stage_prompt(root, state, stage, reprompt=reprompt))
@@ -773,6 +884,16 @@ def start_generate_phase(root: Path, state: dict[str, Any], phase_id: str, repro
         "reprompt": reprompt,
         "updated_at": now_iso(),
     }
+    append_event(
+        root,
+        state,
+        "phase_reprompted" if reprompt else "phase_started",
+        stage="generate",
+        phase_id=phase_id,
+        attempts=state.get("generate", {}).get("phase_attempts", {}).get(phase_id),
+        loop_current=state.get("loop", {}).get("current"),
+        loop_max=state.get("loop", {}).get("max"),
+    )
     save_run(root, state)
     set_active(root, state)
     return result_prompt(state, "generate", build_stage_prompt(root, state, "generate", reprompt=reprompt))
@@ -821,10 +942,24 @@ def handle_generate(root: Path, state: dict[str, Any], reprompt_running: bool) -
 
 
 def finish_run(root: Path, state: dict[str, Any], status: str) -> dict[str, Any]:
+    timestamp = now_iso()
     state["status"] = status
     state["blocked_by"] = None
     state["inflight"] = None
-    state["completed_at" if status == "completed" else "failed_at"] = now_iso()
+    state["completed_at" if status == "completed" else "failed_at"] = timestamp
+    duration = elapsed_seconds(state.get("created_at"), timestamp)
+    if duration is not None:
+        state.setdefault("metrics", {})["run_duration_seconds"] = duration
+    append_event(
+        root,
+        state,
+        "run_completed" if status == "completed" else "run_failed",
+        status=status,
+        duration_seconds=duration,
+        loop_current=state.get("loop", {}).get("current"),
+        loop_max=state.get("loop", {}).get("max"),
+        evaluation_status=state.get("evaluation", {}).get("status"),
+    )
     save_run(root, state)
     clear_active(root)
     return result_none(f"run {status}")
@@ -854,12 +989,31 @@ def handle_evaluate_completed(root: Path, state: dict[str, Any]) -> dict[str, An
             set_stage_status(state, "evaluate", "error", "evaluate failed but no follow-up phase exists")
             save_run(root, state)
             return finish_run(root, state, "error")
+        previous_loop = int(loop.get("current", 1))
+        followup_phases = [
+            phase_id
+            for phase_id in state.setdefault("generate", {}).setdefault("queue", [])
+            if phase_id not in state.setdefault("generate", {}).setdefault("completed_phases", [])
+        ]
         loop["current"] = int(loop.get("current", 1)) + 1
         state.setdefault("generate", {})["current_phase"] = None
         set_stage_status(state, "generate", "pending")
         set_stage_status(state, "evaluate", "pending")
         state["evaluation"] = {"status": "pending", "updated_at": now_iso()}
         state["current_stage"] = "generate"
+        metrics = state.setdefault("metrics", {})
+        metrics["post_evaluate_fixes"] = True
+        metrics["followup_phase_count"] = int(metrics.get("followup_phase_count", 0)) + len(followup_phases)
+        append_event(
+            root,
+            state,
+            "loop_started",
+            previous_loop=previous_loop,
+            loop_current=loop.get("current"),
+            loop_max=loop.get("max"),
+            reason="evaluate_failed",
+            followup_phases=followup_phases,
+        )
         save_run(root, state)
         return handle_generate(root, state, reprompt_running=False)
 
@@ -1035,6 +1189,7 @@ def command_set_stage(args: argparse.Namespace) -> int:
     provider, session_id = identity_from_args(args)
     ensure_update_allowed(state, provider, session_id)
     stage = normalize_stage(args.stage)
+    previous_status = stage_status(state, stage)
     set_stage_status(state, stage, args.status, args.message)
     blocked_by = state.get("blocked_by")
     if (
@@ -1045,6 +1200,19 @@ def command_set_stage(args: argparse.Namespace) -> int:
         clear_run_waiting_user(state)
     if args.evaluation_status:
         state["evaluation"] = {"status": args.evaluation_status, "updated_at": now_iso()}
+    if previous_status != args.status:
+        append_event(
+            root,
+            state,
+            f"stage_{args.status}",
+            stage=stage,
+            status=args.status,
+            message=args.message,
+            evaluation_status=args.evaluation_status,
+            duration_seconds=state.get("stages", {}).get(stage, {}).get("duration_seconds"),
+            loop_current=state.get("loop", {}).get("current"),
+            loop_max=state.get("loop", {}).get("max"),
+        )
     save_run(root, state)
     if state.get("mode") == "auto" and state.get("status") in ("active", "waiting_user"):
         set_active(root, state)
@@ -1057,11 +1225,27 @@ def command_set_generate_phase(args: argparse.Namespace) -> int:
     state = resolve_run(root, args.run_id)
     provider, session_id = identity_from_args(args)
     ensure_update_allowed(state, provider, session_id)
+    previous_status = str(state.setdefault("generate", {}).setdefault("phase_status", {}).get(args.phase_id, "pending"))
     set_generate_phase_status(state, args.phase_id, args.status, args.message)
     if args.status in ("pending", "running"):
         state.setdefault("generate", {})["current_phase"] = args.phase_id
         state["current_stage"] = "generate"
         set_stage_status(state, "generate", "running" if args.status == "running" else "pending")
+    if previous_status != args.status:
+        phase_timing = state.get("generate", {}).get("phase_timing", {}).get(args.phase_id, {})
+        append_event(
+            root,
+            state,
+            f"phase_{args.status}",
+            stage="generate",
+            phase_id=args.phase_id,
+            status=args.status,
+            message=args.message,
+            duration_seconds=phase_timing.get("duration_seconds") if isinstance(phase_timing, dict) else None,
+            attempts=state.get("generate", {}).get("phase_attempts", {}).get(args.phase_id),
+            loop_current=state.get("loop", {}).get("current"),
+            loop_max=state.get("loop", {}).get("max"),
+        )
     save_run(root, state)
     if state.get("mode") == "auto" and state.get("status") == "active":
         set_active(root, state)
@@ -1083,6 +1267,16 @@ def command_set_commit(args: argparse.Namespace) -> int:
         item["completed_at"] = now_iso()
     elif args.status == "failed":
         state["status"] = "error"
+    append_event(
+        root,
+        state,
+        "commit_recorded",
+        commit_key=args.key,
+        status=args.status,
+        message=args.message,
+        mode=item.get("mode"),
+        implementation_phase=item.get("implementation_phase"),
+    )
     save_run(root, state)
     if state.get("status") == "error":
         clear_active(root)
@@ -1107,6 +1301,7 @@ def command_wait_user(args: argparse.Namespace) -> int:
     if stage_status(state, stage) not in ("pending", "running"):
         raise RuntimeError("wait-user requires clarify to be pending or running")
     set_run_waiting_user(state, "clarify_user_decision", args.message, stage=stage)
+    append_event(root, state, "run_waiting_user", stage=stage, kind="clarify_user_decision", message=args.message)
     save_run(root, state)
     if state.get("mode") == "auto":
         set_active(root, state)
@@ -1122,6 +1317,7 @@ def command_pause(args: argparse.Namespace) -> int:
     if state.get("status") in ("completed", "error"):
         raise RuntimeError(f"cannot pause a run with status {state.get('status')}")
     set_run_waiting_user(state, "manual_pause", args.message)
+    append_event(root, state, "run_paused", kind="manual_pause", message=args.message)
     save_run(root, state)
     if state.get("mode") == "auto":
         set_active(root, state)
@@ -1140,6 +1336,7 @@ def command_resume(args: argparse.Namespace) -> int:
             raise RuntimeError("resume requires a session binding; pass --provider and --session-id if it cannot be inferred")
         bind_state(state, provider, session_id, "resume")
     clear_run_waiting_user(state)
+    append_event(root, state, "run_resumed", provider=provider, session_id=session_id)
     save_run(root, state)
     if state.get("mode") == "auto" and state.get("status") in ("active", "waiting_user"):
         set_active(root, state)
@@ -1175,6 +1372,7 @@ def park_active_run(root: Path, message: str) -> dict[str, Any]:
             else:
                 set_run_waiting_user(state, "manual_pause", message)
                 clear_state_binding(state)
+                append_event(root, state, "run_parked", kind="manual_pause", message=message)
                 save_run(root, state)
                 clear_active(root)
                 output["changed"] = True

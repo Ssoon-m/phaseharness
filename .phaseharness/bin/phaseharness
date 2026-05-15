@@ -1,0 +1,53 @@
+#!/usr/bin/env python3
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+
+def usage() -> str:
+    return """Usage:
+  ./.phaseharness/phaseharness dashboard [--host HOST] [--port PORT]
+  ./.phaseharness/phaseharness summary [--json]
+  ./.phaseharness/phaseharness status [--json]
+  ./.phaseharness/phaseharness state <phaseharness-state.py args>
+
+Examples:
+  ./.phaseharness/phaseharness dashboard
+  ./.phaseharness/phaseharness dashboard --port 8877
+  ./.phaseharness/phaseharness summary --json
+"""
+
+
+def run_python(script: Path, args: list[str]) -> int:
+    return subprocess.call([sys.executable, str(script), *args])
+
+
+def main() -> int:
+    bin_dir = Path(__file__).resolve().parent
+    dashboard = bin_dir / "phaseharness-dashboard.py"
+    state = bin_dir / "phaseharness-state.py"
+    args = sys.argv[1:]
+    if not args or args[0] in {"-h", "--help", "help"}:
+        print(usage())
+        return 0
+
+    command = args[0]
+    rest = args[1:]
+    if command in {"dashboard", "dash", "serve"}:
+        return run_python(dashboard, ["serve", *rest])
+    if command in {"summary", "metrics"}:
+        return run_python(dashboard, ["summary", *rest])
+    if command == "status":
+        return run_python(state, ["status", *rest])
+    if command == "state":
+        return run_python(state, rest)
+
+    print(f"unknown command: {command}", file=sys.stderr)
+    print(usage(), file=sys.stderr)
+    return 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

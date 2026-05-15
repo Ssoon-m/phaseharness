@@ -38,8 +38,11 @@ If `HARNESS_SOURCE` is set:
 
 ```bash
 test -d "$HARNESS_SOURCE/.phaseharness"
+test -f "$HARNESS_SOURCE/.phaseharness/phaseharness"
+test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-state.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-hook.py"
+test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-dashboard.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-sync-bridges.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-update.py"
 test -f "$HARNESS_SOURCE/.phaseharness/bin/phaseharness-worktree.py"
@@ -66,7 +69,7 @@ git clone --depth=1 "$HARNESS_REPO_URL" "$HARNESS_SOURCE"
 ```bash
 mkdir -p .phaseharness
 cp -R "$HARNESS_SOURCE/.phaseharness/." .phaseharness/
-chmod +x .phaseharness/bin/*.py .phaseharness/hooks/*.sh
+chmod +x .phaseharness/phaseharness .phaseharness/bin/phaseharness .phaseharness/bin/*.py .phaseharness/hooks/*.sh
 ```
 
 All installed workflow files live under `.phaseharness/`.
@@ -84,8 +87,11 @@ This creates or updates:
 - `.codex/hooks.json` phaseharness `SessionStart` and `Stop` hook entries
 - `.claude/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
 - `.agents/skills/{clarify,context-gather,plan,generate,evaluate,commit,phaseharness}`
+- `.phaseharness/phaseharness` as a shorter local command launcher
+- `.phaseharness/bin/phaseharness` as the launcher implementation
 - `.phaseharness/bin/phaseharness-update.py` for safe SessionStart updates from managed file hashes
 - `.phaseharness/bin/phaseharness-worktree.py` for parallel worktree creation
+- `.phaseharness/bin/phaseharness-dashboard.py` for local metrics and dashboard views
 - `.phaseharness/state/active.json`
 - `.phaseharness/state/index.json`
 
@@ -120,8 +126,12 @@ The hook may continue work only when `.phaseharness/state/active.json` points to
 ## Smoke Verification
 
 ```bash
+./.phaseharness/phaseharness --help
+./.phaseharness/phaseharness summary --json
 python3 .phaseharness/bin/phaseharness-state.py --help
 python3 .phaseharness/bin/phaseharness-hook.py --help
+python3 .phaseharness/bin/phaseharness-dashboard.py --help
+python3 .phaseharness/bin/phaseharness-dashboard.py summary --json
 python3 .phaseharness/bin/phaseharness-sync-bridges.py --help
 python3 .phaseharness/bin/phaseharness-update.py check --source "$HARNESS_SOURCE" --quiet
 python3 .phaseharness/bin/phaseharness-worktree.py --help
@@ -147,4 +157,8 @@ Important: before starting a real phaseharness run, if this project has architec
 Then start a workflow with:
 
 Use `phaseharness` to implement <task>.
+
+To view metrics:
+
+./.phaseharness/phaseharness dashboard
 ```

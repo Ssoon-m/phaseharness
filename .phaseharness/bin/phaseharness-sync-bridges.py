@@ -237,6 +237,13 @@ def ensure_state_files(root: Path) -> list[Path]:
     return changed
 
 
+def ensure_bin_permissions(root: Path) -> None:
+    make_executable(root / ".phaseharness" / "phaseharness")
+    make_executable(root / ".phaseharness" / "bin" / "phaseharness")
+    make_executable(root / ".phaseharness" / "bin" / "phaseharness-dashboard.py")
+    make_executable(root / ".phaseharness" / "bin" / "phaseharness-state.py")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Sync phaseharness hooks and skill bridges.")
     parser.add_argument("--runtime", choices=["all", "claude", "codex"], default="all")
@@ -246,6 +253,7 @@ def main() -> int:
 
     root = find_project_root()
     changed: list[Path] = ensure_state_files(root)
+    ensure_bin_permissions(root)
     if not args.skip_skills:
         changed.extend(install_skill_bridges(root))
     if args.runtime in ("all", "claude"):
